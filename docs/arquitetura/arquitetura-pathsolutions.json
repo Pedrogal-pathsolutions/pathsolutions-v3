@@ -1,0 +1,2728 @@
+{
+ "doc": {
+  "scanner": {
+   "s": "Fronteira física do sistema",
+   "how": [
+    "Digitaliza a lâmina corada em pirâmide multi-resolução.",
+    "A magnificação de varredura define o nível de trabalho do tiling (tipicamente 20×).",
+    "Qualidade de foco e coloração aqui determina a taxa de rejeição no QC 2."
+   ],
+   "par": [
+    [
+     "Formato de saída",
+     "depende do modelo Motic — confirmar"
+    ],
+    [
+     "mpp do nível 0",
+     "precisa estar no metadado do arquivo"
+    ]
+   ],
+   "fal": [
+    "Foco irregular eleva a rejeição de patches",
+    "Formato proprietário pode exigir conversão antes da leitura"
+   ]
+  },
+  "lis": {
+   "s": "Fonte de verdade do caso",
+   "how": [
+    "Fornece case_id, órgão, tipo de material e identificação do paciente.",
+    "O campo de órgão é o que seleciona o modelo mais adiante.",
+    "PathoWatch tem integração nativa; PathoWeb depende de extração autorizada."
+   ],
+   "fal": [
+    "Órgão ausente ou com grafia divergente quebra o roteamento",
+    "O direito de acesso ao PathoWeb vem da licença do fornecedor, não da posse do dado"
+   ],
+   "abr": [
+    "Formalizar autorização escrita antes de extração programática em cada novo cliente"
+   ]
+  },
+  "ext": {
+   "s": "Evita mudar o LIS do cliente",
+   "how": [
+    "Casa o arquivo WSI com o caso aberto no LIS.",
+    "Pede URL assinada à API e sobe o arquivo direto ao Blob.",
+    "Envia POST /v1/jobs com metadados e hash do arquivo."
+   ],
+   "par": [
+    [
+     "Idempotência",
+     "wsi_sha256 + case_id"
+    ],
+    [
+     "Upload",
+     "por blocos, com retomada"
+    ]
+   ],
+   "fal": [
+    "WSI sem case_id vira job órfão",
+    "Mudança de layout do LIS do fornecedor quebra a extração",
+    "Upload interrompido sem retomada desperdiça banda"
+   ]
+  },
+  "api": {
+   "s": "Plano de controle — não processa imagem",
+   "how": [
+    "Autentica por JWT e resolve o tenant pelo token.",
+    "Cria o job no Postgres e publica a mensagem na fila.",
+    "Devolve URL assinada de escopo e prazo curtos para o upload.",
+    "Serve status, predição e heatmap ao workspace."
+   ],
+   "par": [
+    [
+     "Rotas",
+     "/v1/jobs · /cases/{id}/inference · /heatmap · /review · /models"
+    ],
+    [
+     "tenant_id",
+     "sempre do token, nunca de parâmetro"
+    ]
+   ],
+   "fal": [
+    "Arquivo grande passando pela API em vez de ir direto ao Blob causa timeout",
+    "Aceitar tenant_id do cliente seria vazamento entre laboratórios"
+   ]
+  },
+  "db": {
+   "s": "Estado e trilha de auditoria",
+   "how": [
+    "Guarda tenants, casos, lâminas, jobs, modelos, predições, revisões e log de acesso.",
+    "Armazena o ponteiro do .h5, nunca o conteúdo.",
+    "Row-Level Security por tenant_id, no mesmo padrão do LIS próprio."
+   ],
+   "fal": [
+    "Sem RLS, uma consulta mal escrita cruza dados de laboratórios diferentes"
+   ],
+   "abr": [
+    "Definir retenção do log de auditoria e política de acesso para suporte"
+   ]
+  },
+  "queue": {
+   "s": "Desacopla API e GPU",
+   "how": [
+    "Recebe a mensagem do job e entrega a um worker por vez.",
+    "Visibility timeout segura a mensagem enquanto o worker processa.",
+    "Falha técnica volta à fila com backoff; estouro de tentativas vai para dead-letter."
+   ],
+   "par": [
+    [
+     "Mensagem",
+     "job_id, tenant_id, case_id, wsi_uri, organ, pipeline_version, attempt"
+    ],
+    [
+     "Escala",
+     "permite scale-to-zero da VM GPU"
+    ]
+   ],
+   "fal": [
+    "Visibility timeout menor que o processamento gera duplicidade",
+    "Dead-letter sem alarme significa caso perdido em silêncio"
+   ]
+  },
+  "worker": {
+   "s": "Executa o pipeline offline inteiro",
+   "how": [
+    "Consome um job por vez: uma lâmina por execução.",
+    "Lê a WSI em streaming, roda QC, tiling, normalização e extração.",
+    "Escreve o .h5 e atualiza status e métricas."
+   ],
+   "fal": [
+    "GPU única é ponto de falha e teto de vazão",
+    "Processamento não idempotente geraria dois .h5 para o mesmo job"
+   ],
+   "abr": [
+    "Definir tempo de partida aceitável no scale-to-zero e comportamento em pico"
+   ]
+  },
+  "load": {
+   "s": "Leitura sem estourar memória",
+   "how": [
+    "Abre a pirâmide e lê por nível, em blocos.",
+    "O nível 0 só é lido nas regiões com tecido."
+   ],
+   "fal": [
+    "Formato não suportado pelo leitor",
+    "Leitura em blocos pequenos faz a latência de rede dominar o tempo"
+   ]
+  },
+  "qc1": {
+   "s": "Decide se a lâmina merece GPU",
+   "how": [
+    "Lê um nível baixo da pirâmide (1,25–5×), de custo desprezível.",
+    "Converte RGB para HSV: o canal de saturação separa vidro de tecido.",
+    "Aplica Otsu no canal de saturação — limiar por lâmina, não fixo.",
+    "Morfologia: abertura, fechamento e preenchimento de buracos, com kernel em µm.",
+    "Componentes conexos: descarta fragmentos abaixo da área mínima.",
+    "Filtra artefatos: caneta, etiqueta, bolha e borda da lamínula.",
+    "Calcula área de tecido em mm², nº de fragmentos e maior fragmento."
+   ],
+   "par": [
+    [
+     "Nível de leitura",
+     "~2–8 µm/px"
+    ],
+    [
+     "Limiar de área",
+     "em mm², a calibrar por tipo de material"
+    ],
+    [
+     "Kernel morfológico",
+     "definido em µm, convertido por mpp"
+    ]
+   ],
+   "de": [
+    "Miniatura da WSI"
+   ],
+   "para": [
+    "Máscara de tecido",
+    "Bounding boxes",
+    "Área e contagem de fragmentos"
+   ],
+   "fal": [
+    "Marcação de caneta lida como tecido, se o filtro de matiz não existir",
+    "Limiar percentual reprova biópsia endoscópica válida"
+   ],
+   "abr": [
+    "Calibrar limiares separados para biópsia, peça cirúrgica e citologia"
+   ]
+  },
+  "tissue": {
+   "s": "Porta de QC da lâmina",
+   "how": [
+    "Compara a área de tecido com o limiar do tipo de material.",
+    "Abaixo do limiar, o job encerra como QC_FAILED antes de qualquer GPU."
+   ],
+   "abr": [
+    "QC_FAILED precisa de mensagem de volta ao LIS: é resultado clínico, não erro técnico"
+   ]
+  },
+  "fail": {
+   "s": "Fim legítimo de um job",
+   "how": [
+    "Status terminal com motivo registrado.",
+    "Não consome GPU e não gera .h5."
+   ],
+   "abr": [
+    "Definir quem é avisado no laboratório e em quanto tempo"
+   ]
+  },
+  "tiling": {
+   "s": "Onde a geometria é fixada",
+   "how": [
+    "Gera a grade de patches sobre a máscara de tecido.",
+    "Tamanho, stride e magnificação ficam travados por versão de pipeline.",
+    "Registra X e Y de cada patch em pixels do nível 0."
+   ],
+   "par": [
+    [
+     "Tamanho do patch",
+     "a definir e travar (ordem de 224–512 px)"
+    ],
+    [
+     "Stride",
+     "sem sobreposição, ou sobreposição a definir"
+    ],
+    [
+     "Magnificação",
+     "tipicamente 20×"
+    ]
+   ],
+   "fal": [
+    "Mudar qualquer parâmetro invalida os .h5 já gerados",
+    "Coordenada gravada em nível diferente do viewer desalinha o heatmap"
+   ]
+  },
+  "qc2": {
+   "s": "Seis métricas por patch, não um sim/não",
+   "how": [
+    "Fração de tecido no patch, recalculada na resolução de trabalho.",
+    "Nitidez: variância do Laplaciano e Tenengrad, normalizados pelo percentil da lâmina.",
+    "Dobra de tecido: diferença entre saturação e luminância.",
+    "Artefatos: bolha, caneta, poeira e borda da lamínula.",
+    "Coloração: densidade óptica de H e E após deconvolução de cor.",
+    "Consolida tudo num vetor de K scores, gravado no .h5."
+   ],
+   "par": [
+    [
+     "Fração de tecido",
+     "limiar entre 30% e 50%, a calibrar"
+    ],
+    [
+     "Nitidez",
+     "corte relativo por lâmina, não absoluto"
+    ],
+    [
+     "Alvo de rejeição",
+     "medir antes de fixar"
+    ]
+   ],
+   "de": [
+    "Patches do tiling"
+   ],
+   "para": [
+    "Patches aceitos",
+    "Vetor de scores [N×K]",
+    "Contagem de rejeição por motivo"
+   ],
+   "fal": [
+    "Métrica de foco absoluta confunde textura densa com nitidez",
+    "Dobra de tecido passa no teste de foco e engana o modelo se não for medida",
+    "Rejeição alta sem alerta esconde problema de scanner ou de coloração"
+   ],
+   "abr": [
+    "Filtrar antes ou depois do Hibou? Antes é barato mas trava o limiar; depois é flexível e custa GPU e storage"
+   ]
+  },
+  "patch": {
+   "s": "Regra de aceitação do patch",
+   "how": [
+    "Combina os K scores por limiar, ou por classificador leve treinado com patches rotulados."
+   ],
+   "abr": [
+    "Calibrar com 500–1000 patches rotulados por tipo de material, escolhendo o corte pela curva ROC"
+   ]
+  },
+  "reject": {
+   "s": "Descartado, mas contabilizado",
+   "how": [
+    "Não gasta GPU nem espaço.",
+    "O motivo entra na contagem agregada da lâmina."
+   ],
+   "abr": [
+    "Definir o limite de rejeição que dispara pedido de re-scan"
+   ]
+  },
+  "norm": {
+   "s": "Presente no plano técnico, ausente no Mermaid",
+   "how": [
+    "Macenko estima a matriz de coloração da própria lâmina.",
+    "Projeta a imagem para uma referência comum de H e E.",
+    "Reduz a variação entre laboratórios e scanners antes da extração."
+   ],
+   "fal": [
+    "Sem LoRA por laboratório, é a principal defesa contra variação de domínio",
+    "Aplicar normalização diferente do treino do extrator piora o resultado"
+   ],
+   "abr": [
+    "Confirmar se saiu do diagrama por decisão ou por esquecimento",
+    "Se ficar, a versão do normalizador entra nos metadados do .h5"
+   ]
+  },
+  "hibou": {
+   "s": "Congelado, igual para todos os tenants",
+   "how": [
+    "Pré-processa o patch conforme o pré-treino do modelo.",
+    "ViT-L/14: sub-patches de 14×14, 24 blocos de atenção, dimensão 1024.",
+    "Pré-treino DINOv2 sobre lâminas de patologia.",
+    "Agrega o token (CLS ou média) num vetor de 1024 dimensões."
+   ],
+   "par": [
+    [
+     "Precisão",
+     "fp16 no lote"
+    ],
+    [
+     "Lote",
+     "limitado pelos 16 GB da T4 — medir"
+    ],
+    [
+     "Pesos",
+     "congelados, hash registrado"
+    ]
+   ],
+   "fal": [
+    "A licença do peso precisa de auditoria antes de uso comercial",
+    "Trocar a versão transforma todo o acervo de .h5 em legado"
+   ]
+  },
+  "emb": {
+   "s": "Única saída da GPU",
+   "how": [
+    "Um vetor de 1024 dimensões por patch aceito.",
+    "A imagem não é armazenada novamente."
+   ],
+   "abr": [
+    "fp16 corta storage pela metade — validar impacto na acurácia antes de adotar"
+   ]
+  },
+  "consol": {
+   "s": "Uma escrita por lâmina",
+   "how": [
+    "Empacota embeddings, coordenadas, scores de QC e metadados.",
+    "Grava em nome temporário e renomeia ao final."
+   ],
+   "fal": [
+    "Falha no meio da escrita deixaria arquivo parcial lido como válido",
+    "Sem extractor_version, não há como saber o que reprocessar depois"
+   ]
+  },
+  "h5": {
+   "s": "O ativo reutilizável do sistema",
+   "how": [
+    "Sustenta inferência, retreino e novos órgãos sem reabrir nenhuma WSI.",
+    "Lido em CPU: milissegundos por caso."
+   ],
+   "par": [
+    [
+     "/embeddings",
+     "[N×1024] float16"
+    ],
+    [
+     "/coordinates",
+     "[N×2] int32, nível 0"
+    ],
+    [
+     "/qc_scores",
+     "[N×K] float32"
+    ],
+    [
+     "attrs",
+     "tenant, mpp, tile, stride, extractor_version, qc_version"
+    ]
+   ],
+   "fal": [
+    "Custo cresce linearmente com o volume de lâminas",
+    "Pode superar a receita por lâmina — resolver antes de escalar"
+   ]
+  },
+  "blobwsi": {
+   "s": "Imagem original, isolada por tenant",
+   "how": [
+    "Container ou prefixo por tenant, com URL assinada de escopo curto."
+   ],
+   "fal": [
+    "Maior parcela do custo de armazenamento"
+   ],
+   "abr": [
+    "Política de retenção da WSI: manter, arquivar em camada fria ou descartar após prazo"
+   ]
+  },
+  "jobdone": {
+   "s": "Lâmina pronta para inferência",
+   "how": [
+    "Status COMPLETED e ponteiro do .h5 gravado no caso.",
+    "Métricas de GPU e duração publicadas."
+   ]
+  },
+  "work": {
+   "s": "Onde o patologista trabalha",
+   "how": [
+    "Viewer de deep zoom sobre a WSI, com overlay do heatmap.",
+    "Revisão e assinatura acontecem aqui."
+   ],
+   "fal": [
+    "Heatmap desalinha se a magnificação do tiling e a do viewer divergirem"
+   ]
+  },
+  "fetch": {
+   "s": "Caminho crítico sem GPU",
+   "how": [
+    "Carrega embeddings e coordenadas do Blob para a memória."
+   ],
+   "fal": [
+    "Versão de extrator incompatível deve levar a reprocessamento, nunca a inferência silenciosa"
+   ]
+  },
+  "router": {
+   "s": "O ponto frágil do desenho",
+   "how": [
+    "Lê o órgão dos metadados do LIS.",
+    "Normaliza o termo por dicionário de sinônimos.",
+    "Seleciona o modelo do órgão e a versão ativa para o tenant."
+   ],
+   "fal": [
+    "Órgão errado escolhe o modelo errado e devolve predição confiante e inválida"
+   ],
+   "abr": [
+    "Definir comportamento para órgão vazio, grafia divergente, material misto e órgão sem modelo"
+   ]
+  },
+  "lismeta": {
+   "s": "Metadado que decide a rota",
+   "how": [
+    "Órgão e tipo de material vêm do cadastro do caso no LIS."
+   ],
+   "fal": [
+    "Campo livre no LIS: a qualidade varia por laboratório e por digitador"
+   ]
+  },
+  "models": {
+   "s": "Registro versionado",
+   "how": [
+    "Um modelo por órgão, com histórico de versões.",
+    "Guarda métricas, conjunto de validação e quem aprovou.",
+    "A versão ativa pode ser fixada por tenant."
+   ]
+  },
+  "proj": {
+   "s": "Entrada do ABMIL",
+   "how": [
+    "Linear 1024 → D, com ReLU e dropout.",
+    "D interno a definir, na ordem de 256–512."
+   ]
+  },
+  "att": {
+   "s": "Atenção com gate",
+   "how": [
+    "Ramo tanh(V·h) multiplicado por sigmoid(U·h) gera o score do patch.",
+    "Softmax sobre os N patches: os pesos somam 1.",
+    "Os pesos viram o heatmap ao serem cruzados com as coordenadas."
+   ],
+   "fal": [
+    "Atenção é evidência visual de apoio, não explicação causal nem delimitação de lesão"
+   ]
+  },
+  "clas": {
+   "s": "Predição por lâmina",
+   "how": [
+    "Linear sobre o vetor agregado, seguido de softmax.",
+    "Treinado apenas com o rótulo da lâmina (MIL)."
+   ]
+  },
+  "outp": {
+   "s": "Três saídas",
+   "how": [
+    "Predição, pesos de atenção e escore de incerteza."
+   ]
+  },
+  "heat": {
+   "s": "Devolve a predição ao espaço da imagem",
+   "how": [
+    "Cruza os pesos de atenção com as coordenadas do .h5.",
+    "Renderiza como overlay sobre a WSI no viewer."
+   ]
+  },
+  "unc": {
+   "s": "Encaminhamento, não decisão clínica",
+   "how": [
+    "Entropia e margem entre as duas maiores classes medem confiança.",
+    "Distância no espaço de embeddings detecta caso fora do domínio.",
+    "Três estados: verde, amarelo e laranja."
+   ],
+   "fal": [
+    "Softmax sem calibração superestima confiança",
+    "Limiares indefinidos tornam imprevisível o volume que cai em revisão"
+   ],
+   "abr": [
+    "Adotar temperature scaling ou predição conforme antes de fixar limiar clínico"
+   ]
+  },
+  "normal": {
+   "s": "Alta confiança",
+   "how": [
+    "Segue para revisão com heatmap.",
+    "Alimenta a métrica de concordância entre IA e patologista."
+   ]
+  },
+  "uncert": {
+   "s": "Confiança baixa",
+   "how": [
+    "Vai para a fila de aprendizado ativo, com prioridade de revisão."
+   ]
+  },
+  "outlier": {
+   "s": "Fora do domínio de treino",
+   "how": [
+    "Vai para a fila de hard case, com revisão obrigatória.",
+    "Volume alto aqui indica domínio novo, não caso raro."
+   ]
+  },
+  "sign": {
+   "s": "Entrega clínica e rótulo de treino",
+   "how": [
+    "O patologista revisa com o heatmap como apoio e assina.",
+    "O laudo assinado vira ground truth com a versão do modelo ativa."
+   ],
+   "abr": [
+    "Registrar se a IA foi vista antes ou depois da conclusão — sem isso não há como medir efeito real na acurácia"
+   ]
+  },
+  "alq": {
+   "s": "Casos incertos",
+   "how": [
+    "Concentra o que tem maior valor de rotulagem."
+   ],
+   "fal": [
+    "Sem limite de tamanho, vira acúmulo que ninguém revisa"
+   ]
+  },
+  "hardq": {
+   "s": "Outliers e anomalias",
+   "how": [
+    "Casos fora do domínio, que sinalizam limite de escopo do modelo."
+   ]
+  },
+  "review": {
+   "s": "Rotulagem pelo especialista",
+   "how": [
+    "Registra diagnóstico validado, versão do modelo e se houve discordância."
+   ]
+  },
+  "label": {
+   "s": "Ground truth estruturado",
+   "how": [
+    "Taxonomia fixa de classes por órgão.",
+    "Grava no Postgres e na base de aprendizado ativo."
+   ],
+   "fal": [
+    "Sem taxonomia fixa, o rótulo não é treinável"
+   ]
+  },
+  "aldata": {
+   "s": "Base curada de casos difíceis",
+   "how": [
+    "Casos incertos e outliers com laudo real."
+   ],
+   "fal": [
+    "Viés de seleção: treinar só no que o modelo errou distorce a distribuição",
+    "Separação por caso e por laboratório é obrigatória para não vazar treino no teste"
+   ]
+  },
+  "retrain": {
+   "s": "A vantagem estrutural da arquitetura",
+   "how": [
+    "Treina apenas a cabeça ABMIL do órgão.",
+    "Consome os .h5 existentes: nenhuma WSI é reaberta.",
+    "Ciclo de horas, com custo de GPU quase nulo."
+   ],
+   "fal": [
+    "Esquecimento catastrófico se o treino usar só casos difíceis"
+   ]
+  },
+  "valid": {
+   "s": "Portão entre experimento e produção",
+   "how": [
+    "Conjunto de teste travado, separado por caso e por laboratório.",
+    "Métricas por classe, órgão e cliente.",
+    "Comparação de não inferioridade com a versão em produção.",
+    "Aprovação registrada com quem, quando e com quais dados."
+   ],
+   "abr": [
+    "Faltam protocolo de mudança predeterminado, monitoramento de drift e auditoria de equidade"
+   ]
+  },
+  "deploy": {
+   "s": "Liberação gradual",
+   "how": [
+    "Sombra, depois um tenant, depois todos.",
+    "Rollback de um passo sempre disponível."
+   ],
+   "fal": [
+    "Promoção global direta muda o resultado de todos os clientes ao mesmo tempo"
+   ]
+  }
+ },
+ "main": {
+  "nodes": [
+   {
+    "id": "scanner",
+    "t": "Scanner Motic",
+    "l": [
+     "Digitaliza a lâmina corada",
+     "WSI em pirâmide multi-resolução",
+     "Foco e coloração ditam a rejeição no QC"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "lis",
+    "t": "LIS do laboratório",
+    "l": [
+     "PathoWatch: integração nativa",
+     "PathoWeb: extração autorizada",
+     "Fonte de case_id, órgão e material"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "ext",
+    "t": "Extensão / Gateway do LIS",
+    "l": [
+     "Casa a WSI com o caso do LIS",
+     "Upload direto ao Blob (URL assinada)",
+     "Não exige alterar o LIS do cliente"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "api",
+    "t": "API FastAPI + JWT",
+    "l": [
+     "Resolve o tenant pelo token, nunca pelo cliente",
+     "Cria o job e devolve URL assinada",
+     "Expõe status, predição e heatmap"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "db",
+    "t": "PostgreSQL",
+    "l": [
+     "Casos, jobs, tenants, modelos, auditoria",
+     "Guarda o ponteiro do .h5, não o conteúdo",
+     "Row-Level Security por tenant_id"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "blobwsi",
+    "t": "WSI — Azure Blob",
+    "l": [
+     "Container ou prefixo por tenant",
+     "Maior parcela do custo de storage",
+     "Política de retenção a definir"
+    ],
+    "tone": "store",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "queue",
+    "t": "Fila de jobs — Azure Queue",
+    "l": [
+     "Desacopla API e GPU; permite scale-to-zero",
+     "Retry com backoff e dead-letter",
+     "Visibility timeout > pior tempo medido"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "worker",
+    "t": "GPU Worker",
+    "l": [
+     "1 job = 1 lâmina",
+     "Idempotente por job_id: reentrega não duplica",
+     "Publica progresso e métricas de GPU"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "load",
+    "t": "Leitura da WSI em streaming",
+    "l": [
+     "Por nível da pirâmide, em blocos",
+     "A lâmina inteira nunca entra na RAM"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "qc1",
+    "t": "QC fase 1 — miniatura",
+    "l": [
+     "Detecção de tecido em baixa magnificação",
+     "Otsu no canal de saturação + morfologia",
+     "Saída: máscara e área de tecido em mm²"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "tissue",
+    "t": "Existe tecido?",
+    "l": [
+     "porta de QC"
+    ],
+    "tone": "dec",
+    "kind": "diamond",
+    "spec": false
+   },
+   {
+    "id": "fail",
+    "t": "Job encerrado — QC_FAILED",
+    "l": [
+     "Motivo: material insuficiente",
+     "Resultado clínico, não erro técnico",
+     "Precisa voltar ao LIS como aviso"
+    ],
+    "tone": "fail",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "tiling",
+    "t": "Tiling",
+    "l": [
+     "Grade de patches sobre a máscara",
+     "Tamanho, stride e magnificação travados",
+     "Coordenadas X/Y gravadas no nível 0"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "qc2",
+    "t": "QC fase 2 — por patch",
+    "l": [
+     "6 métricas: tecido, foco, dobra, artefato, cor",
+     "Vetor de scores por patch, não só sim/não",
+     "Rejeição alta = alerta de re-scan"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "patch",
+    "t": "Patch aceitável?",
+    "l": [
+     "limiar a calibrar"
+    ],
+    "tone": "dec",
+    "kind": "diamond",
+    "spec": false
+   },
+   {
+    "id": "reject",
+    "t": "Patch descartado",
+    "l": [
+     "Não consome GPU",
+     "Contagem por motivo vai ao .h5"
+    ],
+    "tone": "fail",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "norm",
+    "t": "Normalização Macenko",
+    "l": [
+     "Reduz variação de coloração entre labs",
+     "Está no plano técnico, ausente no Mermaid",
+     "Sem LoRA, é a principal defesa de domínio"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": true
+   },
+   {
+    "id": "hibou",
+    "t": "Hibou-L — ViT-L/14 (DINOv2)",
+    "l": [
+     "Pesos congelados: sem LoRA, sem fine-tuning",
+     "Lote em fp16 até saturar os 16 GB da T4",
+     "Mesmo extrator para todos os tenants"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "emb",
+    "t": "Embedding 1024d por patch",
+    "l": [
+     "Única saída da GPU",
+     "Mudar a versão torna todo .h5 legado"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "consol",
+    "t": "Consolidação HDF5",
+    "l": [
+     "Escrita única por lâmina",
+     "Grava temporário e renomeia ao fim",
+     "Evita .h5 parcial lido como válido"
+    ],
+    "tone": "gpu",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "h5",
+    "t": "Acervo .h5 — embeddings",
+    "l": [
+     "/embeddings   [N×1024] float16",
+     "/coordinates  [N×2] int32 (nível 0)",
+     "/qc_scores    [N×K] float32",
+     "attrs: tenant, mpp, tile, extractor_version"
+    ],
+    "tone": "store",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "jobdone",
+    "t": "Job COMPLETED",
+    "l": [
+     "Status e ponteiro do .h5 no Postgres",
+     "Lâmina pronta para inferência em CPU"
+    ],
+    "tone": "ok",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "work",
+    "t": "Workspace React",
+    "l": [
+     "Viewer de deep zoom + overlay de heatmap",
+     "Roda na mesma VM CPU do plano de controle"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "fetch",
+    "t": "API busca o .h5 no Blob",
+    "l": [
+     "Sem GPU no caminho crítico",
+     "Extrator incompatível → reprocessar"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "router",
+    "t": "Roteador de modelos",
+    "l": [
+     "Órgão → ABMIL + versão ativa",
+     "Sem regra para órgão vazio ou sem modelo",
+     "Ponto de erro silencioso hoje"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "lismeta",
+    "t": "Metadados do LIS",
+    "l": [
+     "Órgão do caso (LIS)",
+     "seleciona o modelo"
+    ],
+    "tone": "ctrl",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "models",
+    "t": "Registro de modelos ABMIL",
+    "l": [
+     "Um modelo por órgão, versionado",
+     "Versão ativa por tenant",
+     "Guarda métricas e quem aprovou"
+    ],
+    "tone": "store",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "proj",
+    "t": "Projeção",
+    "l": [
+     "1024d → dimensão interna"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "att",
+    "t": "Atenção por instância",
+    "l": [
+     "Peso por patch (MIL)"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "clas",
+    "t": "Classificador",
+    "l": [
+     "Predição por lâmina"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "outp",
+    "t": "Saídas",
+    "l": [
+     "Predição · atenção · incerteza"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "heat",
+    "t": "Heatmap de atenção",
+    "l": [
+     "Atenção × coordenadas",
+     "Overlay sobre a imagem"
+    ],
+    "tone": "ai",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "unc",
+    "t": "Incerteza / tipo",
+    "l": [
+     "limiares a calibrar"
+    ],
+    "tone": "dec",
+    "kind": "diamond",
+    "spec": false
+   },
+   {
+    "id": "normal",
+    "t": "Verde — alta confiança",
+    "l": [
+     "Segue para revisão com heatmap"
+    ],
+    "tone": "ok",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "uncert",
+    "t": "Amarelo — confiança baixa",
+    "l": [
+     "Entropia alta ou margem pequena"
+    ],
+    "tone": "dec",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "outlier",
+    "t": "Laranja — outlier / OOD",
+    "l": [
+     "Longe do domínio de treino"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "sign",
+    "t": "Revisão e assinatura",
+    "l": [
+     "Nenhum estado dispensa o patologista",
+     "Registrar se a IA foi vista antes ou depois"
+    ],
+    "tone": "ok",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "alq",
+    "t": "Fila de aprendizado ativo",
+    "l": [
+     "Casos incertos, revisão priorizada"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "hardq",
+    "t": "Fila de hard case",
+    "l": [
+     "Outliers e anomalias"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "review",
+    "t": "Revisão do especialista",
+    "l": [
+     "Laudo real como rótulo",
+     "Guarda versão do modelo e concordância"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "label",
+    "t": "Ground truth estruturado",
+    "l": [
+     "Taxonomia fixa de classes",
+     "Grava no Postgres e na base de treino"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "aldata",
+    "t": "Base de aprendizado ativo",
+    "l": [
+     "Casos difíceis com laudo real",
+     "Separação por caso e por laboratório"
+    ],
+    "tone": "store",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "retrain",
+    "t": "Retreino só da cabeça ABMIL",
+    "l": [
+     "Consome os .h5 já existentes",
+     "Nenhuma WSI é reaberta: ciclo de horas",
+     "Extrator congelado = GPU quase zero"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "valid",
+    "t": "Validação e versionamento",
+    "l": [
+     "Hold-out travado por caso e por lab",
+     "Métricas por classe, órgão e cliente",
+     "Faltam drift e auditoria de equidade"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   },
+   {
+    "id": "deploy",
+    "t": "Publicação da nova versão",
+    "l": [
+     "Sombra → 1 tenant → todos",
+     "Rollback de um passo"
+    ],
+    "tone": "al",
+    "kind": "box",
+    "spec": false
+   }
+  ],
+  "edges": [
+   {
+    "a": "scanner",
+    "b": "ext",
+    "label": "WSI (.svs / .tiff / .mrxs)"
+   },
+   {
+    "a": "lis",
+    "b": "ext",
+    "label": "case_id · órgão · tenant"
+   },
+   {
+    "a": "ext",
+    "b": "api",
+    "label": "POST /v1/jobs"
+   },
+   {
+    "a": "ext",
+    "b": "blobwsi",
+    "label": "upload com URL assinada"
+   },
+   {
+    "a": "api",
+    "b": "db",
+    "label": "cria job · grava auditoria"
+   },
+   {
+    "a": "api",
+    "b": "queue",
+    "label": "job_id · wsi_uri · tenant · organ"
+   },
+   {
+    "a": "queue",
+    "b": "worker",
+    "label": "entrega 1 job"
+   },
+   {
+    "a": "blobwsi",
+    "b": "worker",
+    "label": "leitura em streaming"
+   },
+   {
+    "a": "worker",
+    "b": "load",
+    "label": null
+   },
+   {
+    "a": "load",
+    "b": "qc1",
+    "label": null
+   },
+   {
+    "a": "qc1",
+    "b": "tissue",
+    "label": null
+   },
+   {
+    "a": "tissue",
+    "b": "fail",
+    "label": "não"
+   },
+   {
+    "a": "tissue",
+    "b": "tiling",
+    "label": "sim"
+   },
+   {
+    "a": "tiling",
+    "b": "qc2",
+    "label": null
+   },
+   {
+    "a": "qc2",
+    "b": "patch",
+    "label": null
+   },
+   {
+    "a": "patch",
+    "b": "reject",
+    "label": "não"
+   },
+   {
+    "a": "patch",
+    "b": "norm",
+    "label": "sim"
+   },
+   {
+    "a": "norm",
+    "b": "hibou",
+    "label": "patches normalizados"
+   },
+   {
+    "a": "hibou",
+    "b": "emb",
+    "label": null
+   },
+   {
+    "a": "emb",
+    "b": "consol",
+    "label": null
+   },
+   {
+    "a": "tiling",
+    "b": "consol",
+    "label": "coordenadas X/Y"
+   },
+   {
+    "a": "qc2",
+    "b": "consol",
+    "label": "scores de QC"
+   },
+   {
+    "a": "consol",
+    "b": "h5",
+    "label": "escrita única do .h5"
+   },
+   {
+    "a": "consol",
+    "b": "jobdone",
+    "label": null
+   },
+   {
+    "a": "jobdone",
+    "b": "db",
+    "label": "status do job · métricas de GPU"
+   },
+   {
+    "a": "work",
+    "b": "fetch",
+    "label": "abre o caso"
+   },
+   {
+    "a": "h5",
+    "b": "fetch",
+    "label": "embeddings + coordenadas"
+   },
+   {
+    "a": "fetch",
+    "b": "router",
+    "label": null
+   },
+   {
+    "a": "lismeta",
+    "b": "router",
+    "label": "órgão"
+   },
+   {
+    "a": "models",
+    "b": "router",
+    "label": "versão ativa"
+   },
+   {
+    "a": "router",
+    "b": "proj",
+    "label": "N × 1024d"
+   },
+   {
+    "a": "proj",
+    "b": "att",
+    "label": null
+   },
+   {
+    "a": "att",
+    "b": "clas",
+    "label": null
+   },
+   {
+    "a": "clas",
+    "b": "outp",
+    "label": null
+   },
+   {
+    "a": "att",
+    "b": "heat",
+    "label": "pesos de atenção"
+   },
+   {
+    "a": "outp",
+    "b": "heat",
+    "label": "predição"
+   },
+   {
+    "a": "outp",
+    "b": "unc",
+    "label": null
+   },
+   {
+    "a": "unc",
+    "b": "normal",
+    "label": "alta confiança"
+   },
+   {
+    "a": "unc",
+    "b": "uncert",
+    "label": "incerto"
+   },
+   {
+    "a": "unc",
+    "b": "outlier",
+    "label": "anomalia"
+   },
+   {
+    "a": "heat",
+    "b": "sign",
+    "label": "overlay na imagem"
+   },
+   {
+    "a": "normal",
+    "b": "sign",
+    "label": "liberado para laudo"
+   },
+   {
+    "a": "uncert",
+    "b": "alq",
+    "label": null
+   },
+   {
+    "a": "outlier",
+    "b": "hardq",
+    "label": null
+   },
+   {
+    "a": "alq",
+    "b": "review",
+    "label": null
+   },
+   {
+    "a": "hardq",
+    "b": "review",
+    "label": null
+   },
+   {
+    "a": "sign",
+    "b": "label",
+    "label": "laudo assinado = rótulo"
+   },
+   {
+    "a": "review",
+    "b": "label",
+    "label": null
+   },
+   {
+    "a": "label",
+    "b": "aldata",
+    "label": "ground truth validado"
+   },
+   {
+    "a": "aldata",
+    "b": "retrain",
+    "label": "só os .h5, sem reabrir WSI"
+   },
+   {
+    "a": "retrain",
+    "b": "valid",
+    "label": null
+   },
+   {
+    "a": "valid",
+    "b": "deploy",
+    "label": "aprovado"
+   },
+   {
+    "a": "deploy",
+    "b": "models",
+    "label": "nova versão em produção"
+   }
+  ]
+ },
+ "subs": {
+  "qc1": {
+   "title": "QC fase 1 — detecção de tecido na miniatura",
+   "ids": "qc1",
+   "nodes": [
+    {
+     "id": "a0",
+     "t": "Entrada — nível baixo da pirâmide",
+     "l": [
+      "Miniatura ou nível de ~2–8 µm/px (1,25–5×)",
+      "Custo desprezível: o nível 0 não é tocado",
+      "Todo o QC 1 roda em CPU, antes da GPU"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a1",
+     "t": "1 · Conversão de espaço de cor",
+     "l": [
+      "RGB → HSV; o canal S separa vidro de tecido",
+      "Vidro: claro e dessaturado. Tecido: saturado",
+      "Alternativa: densidade óptica (−log da intensidade)"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a2",
+     "t": "2 · Limiar de Otsu no canal S",
+     "l": [
+      "Limiar calculado por lâmina, não fixo global",
+      "Absorve variação de exposição entre scanners",
+      "Saída: máscara binária bruta"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a3",
+     "t": "3 · Morfologia",
+     "l": [
+      "Abertura remove poeira e ruído isolado",
+      "Fechamento une fragmentos do mesmo corte",
+      "Preenchimento de buracos (lúmen, adiposo)",
+      "Kernel definido em µm e convertido por mpp"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a4",
+     "t": "4 · Componentes conexos",
+     "l": [
+      "Descarta fragmentos abaixo da área mínima",
+      "Guarda bounding box de cada fragmento",
+      "Nº de fragmentos é sinal clínico útil"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a4b",
+     "t": "Filtro de artefatos",
+     "l": [
+      "Caneta: matiz fora da faixa de H&E",
+      "Etiqueta, borda da lamínula, bolha grande",
+      "Sombra de montagem e sujeira do vidro",
+      "Sem esse filtro, tinta vira 'tecido'"
+     ],
+     "tone": "dec",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a5",
+     "t": "5 · Métricas da lâmina",
+     "l": [
+      "Área de tecido em mm² (não em pixels)",
+      "Nº de fragmentos e maior fragmento",
+      "% da área útil da lâmina"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a6",
+     "t": "Área ≥ limiar?",
+     "l": [
+      "limiar por tipo de material"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "a7",
+     "t": "QC_FAILED",
+     "l": [
+      "Motivo: material insuficiente",
+      "Job encerrado antes de gastar GPU",
+      "Aviso volta ao LIS para nova lâmina"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a8",
+     "t": "Máscara de tecido → tiling",
+     "l": [
+      "Máscara + bounding boxes",
+      "Define onde a grade de patches é gerada"
+     ],
+     "tone": "ok",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "a9",
+     "t": "Decisão em aberto — limiar em mm², não em %",
+     "l": [
+      "Biópsia endoscópica ocupa menos de 1% da lâmina",
+      "Limiar percentual reprovaria material válido",
+      "Calibrar por tipo: biópsia, peça cirúrgica, citologia",
+      "Sem calibração, a taxa de QC_FAILED é imprevisível"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": true
+    }
+   ],
+   "edges": [
+    {
+     "a": "a0",
+     "b": "a1",
+     "label": null
+    },
+    {
+     "a": "a1",
+     "b": "a2",
+     "label": null
+    },
+    {
+     "a": "a2",
+     "b": "a3",
+     "label": null
+    },
+    {
+     "a": "a3",
+     "b": "a4",
+     "label": null
+    },
+    {
+     "a": "a4",
+     "b": "a4b",
+     "label": "matiz e forma"
+    },
+    {
+     "a": "a4",
+     "b": "a5",
+     "label": null
+    },
+    {
+     "a": "a5",
+     "b": "a6",
+     "label": null
+    },
+    {
+     "a": "a6",
+     "b": "a7",
+     "label": "não"
+    },
+    {
+     "a": "a6",
+     "b": "a8",
+     "label": "sim"
+    },
+    {
+     "a": "a8",
+     "b": "a9",
+     "label": null
+    }
+   ]
+  },
+  "qc2": {
+   "title": "QC fase 2 — as seis métricas por patch",
+   "ids": "qc2",
+   "nodes": [
+    {
+     "id": "b0",
+     "t": "Entrada — patch no nível de trabalho",
+     "l": [
+      "Roda em CPU, antes de ocupar a GPU",
+      "Rejeitar aqui economiza inferência"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b1",
+     "t": "1 · Fração de tecido no patch",
+     "l": [
+      "Máscara recalculada na resolução de trabalho",
+      "Patch majoritariamente vidro é descartado",
+      "Limiar típico entre 30% e 50% — a calibrar"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b2",
+     "t": "2 · Nitidez (foco)",
+     "l": [
+      "Variância do Laplaciano + Tenengrad (Sobel)",
+      "Normalizar pelo percentil da própria lâmina",
+      "Valor absoluto confunde textura densa com foco",
+      "Corte relativo sobrevive à troca de scanner"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b3",
+     "t": "3 · Dobra de tecido",
+     "l": [
+      "Diferença entre saturação e luminância",
+      "Dobra: mais escura e mais saturada que o entorno",
+      "Dobra passa no teste de foco e engana o modelo"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b4",
+     "t": "4 · Artefatos",
+     "l": [
+      "Bolha: borda circular, interior sem textura",
+      "Caneta: matiz fora da faixa de H&E",
+      "Poeira, risco no vidro, borda da lamínula"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b5",
+     "t": "5 · Coloração",
+     "l": [
+      "Deconvolução de cor separa H e E",
+      "Densidade óptica média de cada canal",
+      "Detecta sub e sobrecoloração da lâmina"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b6",
+     "t": "6 · Redundância",
+     "l": [
+      "Patch quase idêntico ao vizinho agrega pouco",
+      "Opcional: amostrar para cortar custo de GPU",
+      "Não está no desenho atual"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": true
+    },
+    {
+     "id": "b7",
+     "t": "Vetor de scores [K] por patch",
+     "l": [
+      "Os K valores vão inteiros para o .h5",
+      "Permite auditar a rejeição depois do fato",
+      "Base do alerta operacional ao laboratório"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b8",
+     "t": "Todos os limiares OK?",
+     "l": [
+      "regra por métrica"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "b9",
+     "t": "Patch descartado",
+     "l": [
+      "Motivo do descarte é contabilizado",
+      "Não gasta GPU nem espaço no .h5"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b10",
+     "t": "Patch aceito",
+     "l": [
+      "Segue para normalização e extração"
+     ],
+     "tone": "ok",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b11",
+     "t": "Agregado da lâmina",
+     "l": [
+      "% rejeitado por motivo",
+      "Acima do limite: alerta de re-scan",
+      "Rejeição alta = scanner ou coloração"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "b12",
+     "t": "Decisão em aberto — filtrar antes ou depois do Hibou?",
+     "l": [
+      "Antes (desenho atual): barato, mas mudar o limiar exige reprocessar a lâmina inteira",
+      "Depois: guarda embedding de todo patch e filtra na inferência — flexível, custa GPU e storage",
+      "Meio-termo: guardar embedding só dos patches na faixa de dúvida",
+      "A escolha decide se calibrar QC é ajuste de config ou reprocessamento de acervo"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": true
+    }
+   ],
+   "edges": [
+    {
+     "a": "b0",
+     "b": "b1",
+     "label": null
+    },
+    {
+     "a": "b1",
+     "b": "b2",
+     "label": null
+    },
+    {
+     "a": "b2",
+     "b": "b3",
+     "label": null
+    },
+    {
+     "a": "b3",
+     "b": "b4",
+     "label": null
+    },
+    {
+     "a": "b4",
+     "b": "b5",
+     "label": null
+    },
+    {
+     "a": "b5",
+     "b": "b6",
+     "label": null
+    },
+    {
+     "a": "b6",
+     "b": "b7",
+     "label": null
+    },
+    {
+     "a": "b7",
+     "b": "b8",
+     "label": null
+    },
+    {
+     "a": "b8",
+     "b": "b9",
+     "label": "não"
+    },
+    {
+     "a": "b8",
+     "b": "b10",
+     "label": "sim"
+    },
+    {
+     "a": "b10",
+     "b": "b11",
+     "label": "contagem por motivo"
+    },
+    {
+     "a": "b10",
+     "b": "b12",
+     "label": null
+    }
+   ]
+  },
+  "hibou": {
+   "title": "Extração de características — Hibou-L congelado",
+   "ids": "hibou",
+   "nodes": [
+    {
+     "id": "c0",
+     "t": "Lote de patches aceitos",
+     "l": [
+      "Tamanho do lote limitado pelos 16 GB da T4",
+      "Lote maior usa melhor a GPU e consome mais RAM"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c1",
+     "t": "1 · Pré-processamento",
+     "l": [
+      "Redimensiona para a entrada do modelo",
+      "Normaliza por média e desvio do pré-treino",
+      "Precisa ser idêntico ao usado no treino do Hibou"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c2",
+     "t": "2 · ViT-L/14",
+     "l": [
+      "Divide o patch em sub-patches de 14×14 px",
+      "24 blocos de atenção, dimensão interna 1024",
+      "Pré-treino DINOv2 sobre lâminas de patologia",
+      "Pesos congelados, hash registrado por versão"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c3",
+     "t": "3 · Agregação do token",
+     "l": [
+      "Token CLS ou média dos tokens → vetor 1024d",
+      "A escolha precisa ser fixa e versionada",
+      "Trocar depois invalida comparação com o acervo"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c4",
+     "t": "Saída — N × 1024 em fp16",
+     "l": [
+      "Única coisa que sai da GPU",
+      "A imagem não é armazenada de novo"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c5",
+     "t": "Licença a auditar",
+     "l": [
+      "CellViT-Hibou-L: CC-BY-NC-SA-4.0",
+      "Incompatível com uso comercial",
+      "Confirmar a licença do peso em produção"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c6",
+     "t": "Versão no arquivo",
+     "l": [
+      "extractor_version grava no .h5",
+      "É o que diz qual acervo reprocessar",
+      "Sem isso, atualizar vira retrabalho cego"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "c7",
+     "t": "Por que congelar compensa",
+     "l": [
+      "Um extrator só para todos os tenants: dado de um cliente não entra no modelo de outro",
+      "Retreino consome .h5, não WSI — ciclo de horas em vez de semanas",
+      "GPU vira custo único por lâmina, não por experimento",
+      "Preço: nenhuma adaptação ao scanner ou à coloração de cada laboratório"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "c0",
+     "b": "c1",
+     "label": null
+    },
+    {
+     "a": "c1",
+     "b": "c2",
+     "label": null
+    },
+    {
+     "a": "c2",
+     "b": "c3",
+     "label": null
+    },
+    {
+     "a": "c3",
+     "b": "c4",
+     "label": null
+    },
+    {
+     "a": "c2",
+     "b": "c5",
+     "label": null
+    },
+    {
+     "a": "c3",
+     "b": "c6",
+     "label": null
+    },
+    {
+     "a": "c4",
+     "b": "c7",
+     "label": null
+    }
+   ]
+  },
+  "abmil": {
+   "title": "ABMIL — como a predição da lâmina é formada",
+   "ids": "proj",
+   "nodes": [
+    {
+     "id": "d0",
+     "t": "Entrada — N × 1024 de um caso",
+     "l": [
+      "N = patches aceitos da lâmina",
+      "Uma 'bolsa' de instâncias sem rótulo individual"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d1",
+     "t": "1 · Projeção",
+     "l": [
+      "Linear 1024 → D, ReLU e dropout",
+      "D interno a definir (ordem de 256–512)",
+      "Reduz custo e regulariza"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d2",
+     "t": "2 · Atenção com gate",
+     "l": [
+      "Ramo tanh(V·h) multiplicado por sigmoid(U·h)",
+      "Score por patch; softmax sobre os N soma 1",
+      "O gate deixa o modelo ignorar região irrelevante"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d3",
+     "t": "3 · Agregação",
+     "l": [
+      "z = Σ wᵢ · hᵢ — um vetor por lâmina",
+      "O tamanho de N não muda a dimensão de z"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d4",
+     "t": "4 · Classificador",
+     "l": [
+      "Linear sobre z → logits → softmax",
+      "Treinado só com o rótulo da lâmina (MIL)"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d5",
+     "t": "5 · Incerteza",
+     "l": [
+      "Entropia da distribuição de classes",
+      "Margem entre as duas maiores probabilidades",
+      "OOD: distância no espaço de embeddings"
+     ],
+     "tone": "dec",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d6",
+     "t": "Saídas",
+     "l": [
+      "Predição por lâmina",
+      "wᵢ por patch → heatmap",
+      "Escore de incerteza → encaminhamento"
+     ],
+     "tone": "ok",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d7",
+     "t": "Treino MIL",
+     "l": [
+      "Rótulo por lâmina, não por pixel",
+      "Dispensa anotação manual exaustiva",
+      "É o que torna o laudo assinado um rótulo"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d8",
+     "t": "Calibração ausente",
+     "l": [
+      "Softmax puro superestima confiança",
+      "Temperature scaling ou predição conforme",
+      "Sem isso, limiar clínico não se sustenta"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "d9",
+     "t": "O que a atenção é e o que não é",
+     "l": [
+      "É onde o modelo concentrou peso para decidir — evidência visual para conferência",
+      "Não é explicação causal nem marcação de lesão",
+      "Não deve ser apresentada ao patologista como delimitação diagnóstica"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "d0",
+     "b": "d1",
+     "label": null
+    },
+    {
+     "a": "d1",
+     "b": "d2",
+     "label": null
+    },
+    {
+     "a": "d2",
+     "b": "d3",
+     "label": null
+    },
+    {
+     "a": "d3",
+     "b": "d4",
+     "label": null
+    },
+    {
+     "a": "d4",
+     "b": "d5",
+     "label": null
+    },
+    {
+     "a": "d5",
+     "b": "d6",
+     "label": null
+    },
+    {
+     "a": "d2",
+     "b": "d7",
+     "label": null
+    },
+    {
+     "a": "d5",
+     "b": "d8",
+     "label": null
+    },
+    {
+     "a": "d6",
+     "b": "d9",
+     "label": null
+    }
+   ]
+  },
+  "queue": {
+   "title": "Ciclo de vida do job — fila, retry e dead-letter",
+   "ids": "queue",
+   "nodes": [
+    {
+     "id": "e0",
+     "t": "QUEUED",
+     "l": [
+      "Mensagem na fila com job_id e tenant_id",
+      "Idempotente: a mesma lâmina não gera dois .h5"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e1",
+     "t": "RUNNING",
+     "l": [
+      "Worker toma a mensagem (visibility timeout)",
+      "Heartbeat de progresso enquanto processa",
+      "Timeout precisa superar o pior tempo medido"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e2",
+     "t": "Resultado?",
+     "l": [
+      "três saídas"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "e3",
+     "t": "COMPLETED",
+     "l": [
+      ".h5 gravado e ponteiro no Postgres"
+     ],
+     "tone": "ok",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e4",
+     "t": "QC_FAILED",
+     "l": [
+      "Terminal e clínico, não técnico",
+      "Precisa de aviso de volta ao LIS"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e5",
+     "t": "Tentativas < máx?",
+     "l": [
+      "falha técnica"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "e6",
+     "t": "Retry com backoff",
+     "l": [
+      "Volta para QUEUED com attempt+1",
+      "Backoff exponencial evita tempestade"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e7",
+     "t": "DEAD_LETTER",
+     "l": [
+      "Exige alarme ativo",
+      "Silêncio aqui significa caso perdido",
+      "Reprocessamento manual após diagnóstico"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "e8",
+     "t": "Três garantias que sustentam a fila",
+     "l": [
+      "Idempotência por job_id: reentrega nunca duplica trabalho",
+      "Visibility timeout maior que o pior caso: evita dois workers na mesma lâmina",
+      "Dead-letter com alarme: falha silenciosa é pior do que falha ruidosa"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "e0",
+     "b": "e1",
+     "label": null
+    },
+    {
+     "a": "e1",
+     "b": "e2",
+     "label": null
+    },
+    {
+     "a": "e2",
+     "b": "e3",
+     "label": "sucesso"
+    },
+    {
+     "a": "e2",
+     "b": "e4",
+     "label": "sem tecido"
+    },
+    {
+     "a": "e2",
+     "b": "e5",
+     "label": "falha técnica"
+    },
+    {
+     "a": "e5",
+     "b": "e6",
+     "label": "sim"
+    },
+    {
+     "a": "e6",
+     "b": "e0",
+     "label": "volta à fila"
+    },
+    {
+     "a": "e5",
+     "b": "e7",
+     "label": "não"
+    },
+    {
+     "a": "e7",
+     "b": "e8",
+     "label": null
+    }
+   ]
+  },
+  "h5": {
+   "title": "Arquivo .h5 — a unidade de trabalho do sistema",
+   "ids": "consol",
+   "nodes": [
+    {
+     "id": "g0",
+     "t": "Um arquivo por lâmina",
+     "l": [
+      "Escrita única do worker, leitura por todo o resto",
+      "Grava em nome temporário e renomeia ao fim"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g1",
+     "t": "/embeddings — [N × 1024] float16",
+     "l": [
+      "Vetor do Hibou-L por patch aceito",
+      "fp16 corta o armazenamento pela metade",
+      "Validar impacto na acurácia antes de adotar"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g2",
+     "t": "/coordinates — [N × 2] int32",
+     "l": [
+      "X, Y em pixels do nível 0",
+      "É o que reconstrói o heatmap sobre a imagem",
+      "Sem elas, a atenção não volta ao espaço da lâmina"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g3",
+     "t": "/qc_scores — [N × K] float32",
+     "l": [
+      "As K métricas de QC daquele patch",
+      "Permite auditar a rejeição sem reprocessar"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g4",
+     "t": "attrs — identidade e versões",
+     "l": [
+      "tenant_id, case_id, slide_id, wsi_sha256",
+      "mpp, magnificação, tile_size, stride",
+      "extractor, extractor_version, qc_version",
+      "n_patches, n_rejected, created_at"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g5",
+     "t": "Escreve",
+     "l": [
+      "GPU Worker, uma vez por lâmina"
+     ],
+     "tone": "gpu",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g6",
+     "t": "Lê na inferência",
+     "l": [
+      "API carrega em CPU, sem GPU",
+      "Milissegundos por caso"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g7",
+     "t": "Lê no retreino",
+     "l": [
+      "Treino do ABMIL sem reabrir WSI",
+      "Ciclo de horas, GPU quase zero"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "g8",
+     "t": "O risco que mora aqui",
+     "l": [
+      "Trocar a versão do Hibou-L transforma todo o acervo em legado",
+      "Sem extractor_version gravado, não há como saber o que reprocessar",
+      "Custo do acervo pode superar a receita por lâmina — decidir retenção antes de escalar"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "g0",
+     "b": "g1",
+     "label": null
+    },
+    {
+     "a": "g1",
+     "b": "g2",
+     "label": null
+    },
+    {
+     "a": "g2",
+     "b": "g3",
+     "label": null
+    },
+    {
+     "a": "g3",
+     "b": "g4",
+     "label": null
+    },
+    {
+     "a": "g1",
+     "b": "g5",
+     "label": null
+    },
+    {
+     "a": "g2",
+     "b": "g6",
+     "label": null
+    },
+    {
+     "a": "g4",
+     "b": "g7",
+     "label": null
+    },
+    {
+     "a": "g4",
+     "b": "g8",
+     "label": null
+    }
+   ]
+  },
+  "router": {
+   "title": "Roteador de modelos — e os caminhos de exceção que faltam",
+   "ids": "router",
+   "nodes": [
+    {
+     "id": "r0",
+     "t": "Metadado de órgão do LIS",
+     "l": [
+      "Campo livre na maioria dos LIS",
+      "A qualidade do dado decide a rota"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "r1",
+     "t": "Órgão preenchido?",
+     "l": [
+      "porta 1"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "r2",
+     "t": "Exceção — não existe hoje",
+     "l": [
+      "Caso deveria ir a triagem manual",
+      "Hoje o comportamento é indefinido"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": true
+    },
+    {
+     "id": "r3",
+     "t": "Normalização do termo",
+     "l": [
+      "Dicionário de sinônimos e grafias",
+      "'gástrico', 'antro', 'estômago' → estomago",
+      "Sem isso, o mesmo órgão vira rotas diferentes"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": true
+    },
+    {
+     "id": "r4",
+     "t": "Há modelo para o órgão?",
+     "l": [
+      "porta 2"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "r5",
+     "t": "Caso segue sem IA",
+     "l": [
+      "A interface precisa dizer isso ao patologista",
+      "Silêncio seria pior: parece que a IA concordou"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": true
+    },
+    {
+     "id": "r6",
+     "t": "Versão ativa para o tenant",
+     "l": [
+      "Contrato pode congelar a versão do cliente",
+      "Evita mudar resultado no meio de um caso",
+      "Registro guarda quem aprovou cada versão"
+     ],
+     "tone": "store",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "r7",
+     "t": "Carrega o ABMIL do órgão",
+     "l": [
+      "Modelo pequeno, roda em CPU",
+      "Inferência em milissegundos"
+     ],
+     "tone": "ai",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "r8",
+     "t": "Por que este é o ponto frágil do desenho",
+     "l": [
+      "Todo o roteamento depende de um campo de texto do LIS do cliente",
+      "Órgão errado escolhe o modelo errado e devolve predição confiante e inválida",
+      "Nenhum dos caminhos de exceção acima existe no diagrama atual"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "r0",
+     "b": "r1",
+     "label": null
+    },
+    {
+     "a": "r1",
+     "b": "r2",
+     "label": "não"
+    },
+    {
+     "a": "r1",
+     "b": "r3",
+     "label": "sim"
+    },
+    {
+     "a": "r3",
+     "b": "r4",
+     "label": null
+    },
+    {
+     "a": "r4",
+     "b": "r5",
+     "label": "não"
+    },
+    {
+     "a": "r4",
+     "b": "r6",
+     "label": "sim"
+    },
+    {
+     "a": "r6",
+     "b": "r7",
+     "label": null
+    },
+    {
+     "a": "r7",
+     "b": "r8",
+     "label": null
+    }
+   ]
+  },
+  "valid": {
+   "title": "Governança de versão — do candidato à produção",
+   "ids": "valid",
+   "nodes": [
+    {
+     "id": "v0",
+     "t": "Modelo candidato",
+     "l": [
+      "Retreino da cabeça ABMIL sobre os .h5"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v1",
+     "t": "1 · Conjunto de teste travado",
+     "l": [
+      "Separado por caso e por laboratório",
+      "Nunca usado em treino nem em seleção",
+      "Vazamento aqui invalida toda a validação"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v2",
+     "t": "2 · Métricas",
+     "l": [
+      "Por classe, por órgão e por laboratório",
+      "Sensibilidade priorizada sobre acurácia global",
+      "Matriz de confusão por tipo de erro clínico"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v3",
+     "t": "3 · Não inferior à produção?",
+     "l": [
+      "porta de aprovação"
+     ],
+     "tone": "dec",
+     "kind": "diamond",
+     "spec": false
+    },
+    {
+     "id": "v4",
+     "t": "Rejeitado",
+     "l": [
+      "Registra motivo e métricas",
+      "Candidato fica no histórico"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v5",
+     "t": "4 · Aprovação registrada",
+     "l": [
+      "Quem aprovou, quando e com quais dados",
+      "Hash dos conjuntos de treino e teste",
+      "Base da trilha de auditoria"
+     ],
+     "tone": "al",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v6",
+     "t": "5 · Sombra",
+     "l": [
+      "Roda em paralelo sem exibir resultado",
+      "Compara com a versão ativa em casos reais"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v7",
+     "t": "6 · Canário — 1 tenant",
+     "l": [
+      "Liberação para um laboratório",
+      "Métricas acompanhadas por período fixo"
+     ],
+     "tone": "ctrl",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v8",
+     "t": "7 · Liberação geral",
+     "l": [
+      "Versão ativa para todos os tenants",
+      "Rollback de um passo, sempre disponível"
+     ],
+     "tone": "ok",
+     "kind": "box",
+     "spec": false
+    },
+    {
+     "id": "v9",
+     "t": "O que falta para isso ser defensável",
+     "l": [
+      "Protocolo de mudança predeterminado (tipo PCCP): o que muda sem nova validação clínica",
+      "Monitoramento formal de drift: o desempenho cai devagar e ninguém percebe",
+      "Auditoria de equidade por subgrupo demográfico",
+      "Regra escrita de quando atualizar deixa de ser ajuste e vira produto novo"
+     ],
+     "tone": "fail",
+     "kind": "box",
+     "spec": false
+    }
+   ],
+   "edges": [
+    {
+     "a": "v0",
+     "b": "v1",
+     "label": null
+    },
+    {
+     "a": "v1",
+     "b": "v2",
+     "label": null
+    },
+    {
+     "a": "v2",
+     "b": "v3",
+     "label": null
+    },
+    {
+     "a": "v3",
+     "b": "v4",
+     "label": "não"
+    },
+    {
+     "a": "v3",
+     "b": "v5",
+     "label": "sim"
+    },
+    {
+     "a": "v5",
+     "b": "v6",
+     "label": null
+    },
+    {
+     "a": "v6",
+     "b": "v7",
+     "label": null
+    },
+    {
+     "a": "v7",
+     "b": "v8",
+     "label": null
+    },
+    {
+     "a": "v8",
+     "b": "v9",
+     "label": null
+    }
+   ]
+  }
+ }
+}

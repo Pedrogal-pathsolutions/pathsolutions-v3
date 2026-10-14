@@ -1,0 +1,860 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5">
+<title>Mapa de arquitetura — PathSolutions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#F4F5F8; --ink:#1E2033; --ink2:#5C5F7A; --line:#D7D9E6; --surface:#FFFFFF; --inset:#F1F2F8;
+  --ctrl-bg:#E3EDFA; --ctrl-br:#2E6FB7; --ctrl-ink:#0E3A63;
+  --gpu-bg:#ECE3FB; --gpu-br:#6B45B8; --gpu-ink:#331A6B;
+  --ai-bg:#DEF2E5; --ai-br:#2C7D50; --ai-ink:#11512E;
+  --store-bg:#E5E5F7; --store-br:#4E4EA0; --store-ink:#232361;
+  --al-bg:#FBEAD5; --al-br:#BE7815; --al-ink:#6D3D06;
+  --fail-bg:#FBDFDF; --fail-br:#C14242; --fail-ink:#6E1A1A;
+  --ok-bg:#DCF1DF; --ok-br:#2E9150; --ok-ink:#13522B;
+  --dec-bg:#FAEFCC; --dec-br:#C08E00; --dec-ink:#6A4900;
+  --edge:#7C7F9B; --edge-ink:#4A4D66; --frame:#C4C7DA; --frame-ink:#5C5F7A;
+}
+@media (prefers-color-scheme:dark){ :root:not([data-theme="light"]){
+  --bg:#14151F; --ink:#ECEDF6; --ink2:#A2A5BE; --line:#2E3044; --surface:#1C1E2B; --inset:#232537;
+  --ctrl-bg:#132A44; --ctrl-br:#5C9BE0; --ctrl-ink:#CBE2FB;
+  --gpu-bg:#261B45; --gpu-br:#A084EE; --gpu-ink:#E0D6FF;
+  --ai-bg:#12331F; --ai-br:#4FB073; --ai-ink:#CFEDD8;
+  --store-bg:#1F1F44; --store-br:#8080D8; --store-ink:#D8D8F7;
+  --al-bg:#3A2708; --al-br:#DCA23F; --al-ink:#F7E2BD;
+  --fail-bg:#3B1618; --fail-br:#E2757A; --fail-ink:#F8D6D8;
+  --ok-bg:#12331F; --ok-br:#4FB073; --ok-ink:#CFEDD8;
+  --dec-bg:#372B08; --dec-br:#D8B33C; --dec-ink:#F6E7BA;
+  --edge:#8B8FAC; --edge-ink:#B6B9CE; --frame:#3A3D55; --frame-ink:#9497B0;
+}}
+:root[data-theme="dark"]{
+  --bg:#14151F; --ink:#ECEDF6; --ink2:#A2A5BE; --line:#2E3044; --surface:#1C1E2B; --inset:#232537;
+  --ctrl-bg:#132A44; --ctrl-br:#5C9BE0; --ctrl-ink:#CBE2FB;
+  --gpu-bg:#261B45; --gpu-br:#A084EE; --gpu-ink:#E0D6FF;
+  --ai-bg:#12331F; --ai-br:#4FB073; --ai-ink:#CFEDD8;
+  --store-bg:#1F1F44; --store-br:#8080D8; --store-ink:#D8D8F7;
+  --al-bg:#3A2708; --al-br:#DCA23F; --al-ink:#F7E2BD;
+  --fail-bg:#3B1618; --fail-br:#E2757A; --fail-ink:#F8D6D8;
+  --ok-bg:#12331F; --ok-br:#4FB073; --ok-ink:#CFEDD8;
+  --dec-bg:#372B08; --dec-br:#D8B33C; --dec-ink:#F6E7BA;
+  --edge:#8B8FAC; --edge-ink:#B6B9CE; --frame:#3A3D55; --frame-ink:#9497B0;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans",system-ui,-apple-system,sans-serif;overflow:hidden}
+#bar{position:fixed;top:0;left:0;right:0;z-index:5;background:color-mix(in srgb,var(--bg) 92%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+#bar .row{display:flex;gap:6px;align-items:center;padding:8px 10px 0;overflow-x:auto;scrollbar-width:none}
+#bar .row::-webkit-scrollbar{display:none}
+#bar .row.b{padding-bottom:8px}
+.ttl{font-size:13px;font-weight:600;white-space:nowrap;padding-right:4px}
+.ttl small{font-weight:400;color:var(--ink2)}
+button{font:inherit;font-size:12.5px;border:1px solid var(--line);background:var(--surface);color:var(--ink2);border-radius:999px;padding:5px 11px;cursor:pointer;white-space:nowrap;flex:0 0 auto}
+button:hover{color:var(--ink);border-color:var(--edge)}
+button.on{background:var(--ctrl-br);border-color:var(--ctrl-br);color:#fff}
+button.back{background:var(--gpu-bg);border-color:var(--gpu-br);color:var(--gpu-ink);font-weight:500}
+#stage{position:fixed;inset:0;top:84px;touch-action:none;cursor:grab;overflow:hidden}
+#stage.drag{cursor:grabbing}
+svg{display:block;width:100%;height:100%;user-select:none}
+.frm{fill:none;stroke:var(--frame);stroke-width:1.5;stroke-dasharray:8 6}
+.frm-t{font-size:13px;font-weight:600;fill:var(--frame-ink)}
+.sub-frm{fill:none;stroke:var(--ai-br);stroke-width:1.3;stroke-dasharray:4 4;opacity:.75}
+.nt{font-size:14.5px;font-weight:600}
+.nl{font-size:11.5px}
+.dt{font-size:13px;font-weight:600}
+.dl{font-size:11px}
+.ed{fill:none;stroke:var(--edge);stroke-width:1.7;marker-end:url(#ah)}
+.ed.dash{stroke-dasharray:6 5;stroke-width:1.4;opacity:.8}
+.el{font-size:10.5px;fill:var(--edge-ink)}
+.elbg{fill:var(--bg);opacity:.94}
+g[data-node]{cursor:pointer}
+g[data-node]:hover .hit{stroke-width:3.2}
+.badge{font-size:13px;font-weight:600}
+#zoom{position:fixed;right:10px;bottom:30px;z-index:6;display:flex;flex-direction:column;gap:6px}
+#zoom button{width:38px;height:38px;border-radius:12px;padding:0;font-size:17px;display:grid;place-items:center;background:var(--surface)}
+#hint{position:fixed;bottom:8px;left:10px;z-index:4;font-size:11px;color:var(--ink2);pointer-events:none;transition:opacity .6s}
+#scrim{position:fixed;inset:0;background:rgba(15,16,25,.45);z-index:8;display:none}
+#scrim.open{display:block}
+#panel{position:fixed;z-index:9;left:0;right:0;bottom:0;max-height:82vh;overflow:auto;display:none;
+  background:var(--surface);border-top:1px solid var(--line);border-radius:16px 16px 0 0;padding:14px 16px 30px}
+#panel.open{display:block}
+@media (min-width:820px){#panel{left:auto;top:0;bottom:0;width:440px;max-height:100vh;border-radius:0;border-left:1px solid var(--line);border-top:0;padding-top:18px}}
+.grip{width:38px;height:4px;border-radius:99px;background:var(--line);margin:0 auto 12px}
+@media (min-width:820px){.grip{display:none}}
+#panel h2{font-size:19px;margin:0 0 3px;line-height:1.25;padding-right:76px}
+#panel .psub{color:var(--ink2);font-size:12.5px;margin-bottom:12px}
+#pclose{position:absolute;top:12px;right:14px}
+.tag{display:inline-block;font-size:10.5px;font-family:"IBM Plex Mono",monospace;border-radius:5px;padding:2px 6px;margin:0 6px 10px 0;border:1px solid}
+.sec{border-top:1px solid var(--line);padding:11px 0 2px}
+.sec h3{font-size:11.5px;color:var(--ink2);margin:0 0 7px;font-weight:500;letter-spacing:.2px}
+.sec ol,.sec ul{margin:0;padding-left:18px}
+.sec li{margin:0 0 6px;font-size:13.5px;line-height:1.45}
+.sec ol li::marker{color:var(--ctrl-br);font-family:"IBM Plex Mono",monospace;font-size:12px}
+.sec.fail li::marker{color:var(--fail-br)}
+.sec.open li::marker{color:var(--al-br)}
+.ptab{width:100%;border-collapse:collapse;font-size:12.5px}
+.ptab td{border-bottom:1px solid var(--line);padding:6px 8px 6px 0;vertical-align:top}
+.ptab td:first-child{color:var(--ink2);width:42%;padding-right:12px}
+.ptab tr:last-child td{border-bottom:0}
+#pgo{display:block;width:100%;margin:14px 0 2px;border-radius:12px;padding:11px;background:var(--gpu-br);border-color:var(--gpu-br);color:#fff;font-weight:500;font-size:13.5px;text-align:center}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <div class="row">
+    <div class="ttl" id="mapttl">PathSolutions · mapa de arquitetura <small>Azure Brazil South · multitenant</small></div>
+    <button id="theme">tema</button>
+  </div>
+  <div class="row b" id="chips"></div>
+</div>
+
+<div id="stage"><svg id="svg" xmlns="http://www.w3.org/2000/svg"></svg></div>
+<div id="zoom"><button id="zin">+</button><button id="zout">−</button></div>
+<div id="hint">toque em um bloco para abrir a especificação · blocos com + abrem sub-mapa</div>
+
+<div id="scrim"></div>
+<aside id="panel" role="dialog" aria-modal="true" aria-labelledby="ptitle">
+  <div class="grip"></div>
+  <button id="pclose">fechar</button>
+  <h2 id="ptitle"></h2>
+  <div class="psub" id="psub"></div>
+  <div id="pbody"></div>
+</aside>
+
+<script>
+const NS="http://www.w3.org/2000/svg", svg=document.getElementById("svg");
+const el=(n,a={})=>{const e=document.createElementNS(NS,n);for(const k in a)e.setAttribute(k,a[k]);return e;};
+
+/* ===================== engine ===================== */
+function newG(id,o){o=o||{};return {id:id,W:o.W||1000,title:o.title||"",N:{},E:[],frames:[],subframes:[],flowB:0,maxB:0};}
+function put(g,id,d){
+  const l=d.l||[], h=d.h||(12+18+l.length*15+12), w=d.w||330, cx=d.cx||470;
+  const n={id:id,x:cx-w/2,y:d.y,w:w,h:h,cx:cx,t:d.t,l:l,tone:d.tone||"ctrl",kind:d.kind||"box",spec:!!d.spec};
+  n.cy=n.y+h/2; n.b=n.y+h; n.r=n.x+w;
+  g.N[id]=n; g.maxB=Math.max(g.maxB,n.b); if(!d.store) g.flowB=Math.max(g.flowB,n.b);
+  return n;
+}
+function frame(g,ids,t,o){
+  o=o||{}; let y0=1e9,y1=-1e9;
+  ids.forEach(i=>{y0=Math.min(y0,g.N[i].y);y1=Math.max(y1,g.N[i].b);});
+  const f={x:o.x,y:y0-38,w:o.w,h:(y1-y0)+60,t:t};
+  g.frames.push(f); g.maxB=Math.max(g.maxB,f.y+f.h);
+  if(!o.store) g.flowB=Math.max(g.flowB,f.y+f.h);
+  return f;
+}
+const edge=(g,a,b,label,rt,o)=>g.E.push({a:a,b:b,label:label,route:rt,o:o||{}});
+const P={top:(n,f)=>[n.x+n.w*(f||.5),n.y], bot:(n,f)=>[n.x+n.w*(f||.5),n.b],
+         lef:(n,f)=>[n.x,n.y+n.h*(f||.5)], rig:(n,f)=>[n.r,n.y+n.h*(f||.5)]};
+function route(g,e){
+  const a=g.N[e.a], b=g.N[e.b], o=e.o, r=e.route;
+  if(r==="down"){
+    const p1=P.bot(a,o.fa), p2=P.top(b,o.ft);
+    if(Math.abs(p1[0]-p2[0])<3) return [p1,p2];
+    const my=o.my!==undefined ? (o.my<0 ? p2[1]+o.my : o.my) : (p1[1]+p2[1])/2;
+    return [p1,[p1[0],my],[p2[0],my],p2];
+  }
+  if(r==="right"){
+    const p1=P.rig(a,o.fa), p2=P.lef(b,o.fb);
+    if(Math.abs(p1[1]-p2[1])<3) return [p1,p2];
+    const mx=o.mx||(p1[0]+p2[0])/2;
+    return [p1,[mx,p1[1]],[mx,p2[1]],p2];
+  }
+  if(r==="left"){
+    const p1=P.lef(a,o.fa), p2=P.rig(b,o.fb);
+    if(Math.abs(p1[1]-p2[1])<3) return [p1,p2];
+    const mx=o.mx||(p1[0]+p2[0])/2;
+    return [p1,[mx,p1[1]],[mx,p2[1]],p2];
+  }
+  if(r==="right-down"){ const p1=P.rig(a,o.fa), p2=P.top(b,o.ft); return [p1,[p2[0],p1[1]],p2]; }
+  if(r==="bus-left"){ const x=o.bus,p1=P.lef(a,o.fa),p2=P.lef(b,o.fb); return [p1,[x,p1[1]],[x,p2[1]],p2]; }
+  if(r==="bus-right"){ const x=o.bus,p1=P.rig(a,o.fa),p2=P.rig(b,o.fb); return [p1,[x,p1[1]],[x,p2[1]],p2]; }
+  if(r==="bus-lr"){ const x=o.bus,p1=P.lef(a,o.fa),p2=P.rig(b,o.fb); return [p1,[x,p1[1]],[x,p2[1]],p2]; }
+  return [P.bot(a),P.top(b)];
+}
+function round(pts,r){
+  r=r||12; let d="M"+pts[0][0]+","+pts[0][1];
+  for(let i=1;i<pts.length-1;i++){
+    const p=pts[i-1],c=pts[i],n=pts[i+1];
+    const v1=[c[0]-p[0],c[1]-p[1]], v2=[n[0]-c[0],n[1]-c[1]];
+    const l1=Math.hypot(v1[0],v1[1])||1, l2=Math.hypot(v2[0],v2[1])||1;
+    const k=Math.min(r,l1/2,l2/2);
+    d+=" L"+(c[0]-v1[0]/l1*k)+","+(c[1]-v1[1]/l1*k)+" Q"+c[0]+","+c[1]+" "+(c[0]+v2[0]/l2*k)+","+(c[1]+v2[1]/l2*k);
+  }
+  const L=pts[pts.length-1];
+  return d+" L"+L[0]+","+L[1];
+}
+
+/* ===================== mapa principal ===================== */
+function buildMain(){
+  const g=newG("main",{W:1520,title:"mapa geral"});
+  const CX=470, SIDE=870, STORE=1280, GUT=165, WM=330, WS=290, WT=300, WA=292, WG=210, FX=50, FW=1000, G1=24, GG=48;
+  let y=76;
+  put(g,"scanner",{y:y,cx:300,w:290,t:"Scanner Motic",l:["Digitaliza a lâmina corada","WSI em pirâmide multi-resolução","Foco e coloração ditam a rejeição no QC"]});
+  put(g,"lis",{y:y,cx:800,w:300,t:"LIS do laboratório",l:["PathoWatch: integração nativa","PathoWeb: extração autorizada","Fonte de case_id, órgão e material"]});
+  y=g.flowB+G1+16;
+  put(g,"ext",{y:y,w:WM,cx:CX,t:"Extensão / Gateway do LIS",l:["Casa a WSI com o caso do LIS","Upload direto ao Blob (URL assinada)","Não exige alterar o LIS do cliente"]});
+  const f1=frame(g,["scanner","lis","ext"],"1 · ORIGEM — laboratório do cliente",{x:FX,w:FW});
+
+  y=f1.y+f1.h+GG;
+  put(g,"api",{y:y,w:WM,cx:CX,t:"API FastAPI + JWT",l:["Resolve o tenant pelo token, nunca pelo cliente","Cria o job e devolve URL assinada","Expõe status, predição e heatmap"]});
+  put(g,"db",{y:y,cx:SIDE,w:WS,t:"PostgreSQL",l:["Casos, jobs, tenants, modelos, auditoria","Guarda o ponteiro do .h5, não o conteúdo","Row-Level Security por tenant_id"]});
+  put(g,"blobwsi",{y:y,cx:STORE,w:WT,tone:"store",store:1,t:"WSI — Azure Blob",l:["Container ou prefixo por tenant","Maior parcela do custo de storage","Política de retenção a definir"]});
+  const f2=frame(g,["api","db"],"2 · PLANO DE CONTROLE — VM CPU",{x:FX,w:FW});
+
+  y=f2.y+f2.h+GG;
+  put(g,"queue",{y:y,w:WM,cx:CX,tone:"gpu",t:"Fila de jobs — Azure Queue",l:["Desacopla API e GPU; permite scale-to-zero","Retry com backoff e dead-letter","Visibility timeout > pior tempo medido"]});
+  const f3=frame(g,["queue"],"3 · FILA ASSÍNCRONA",{x:FX,w:FW});
+
+  y=f3.y+f3.h+GG;
+  put(g,"worker",{y:y,w:WM,cx:CX,tone:"gpu",t:"GPU Worker",l:["1 job = 1 lâmina","Idempotente por job_id: reentrega não duplica","Publica progresso e métricas de GPU"]});
+  y=g.flowB+G1; put(g,"load",{y:y,w:WM,cx:CX,tone:"gpu",t:"Leitura da WSI em streaming",l:["Por nível da pirâmide, em blocos","A lâmina inteira nunca entra na RAM"]});
+  y=g.flowB+G1; put(g,"qc1",{y:y,w:WM,cx:CX,tone:"gpu",t:"QC fase 1 — miniatura",l:["Detecção de tecido em baixa magnificação","Otsu no canal de saturação + morfologia","Saída: máscara e área de tecido em mm²"]});
+  y=g.flowB+G1+6; put(g,"tissue",{y:y,w:240,h:96,cx:CX,kind:"diamond",tone:"dec",t:"Existe tecido?",l:["porta de QC"]});
+  put(g,"fail",{y:y+8,cx:SIDE,w:WS,tone:"fail",t:"Job encerrado — QC_FAILED",l:["Motivo: material insuficiente","Resultado clínico, não erro técnico","Precisa voltar ao LIS como aviso"]});
+  y=g.flowB+G1+6; put(g,"tiling",{y:y,w:WM,cx:CX,tone:"gpu",t:"Tiling",l:["Grade de patches sobre a máscara","Tamanho, stride e magnificação travados","Coordenadas X/Y gravadas no nível 0"]});
+  y=g.flowB+G1; put(g,"qc2",{y:y,w:WM,cx:CX,tone:"gpu",t:"QC fase 2 — por patch",l:["6 métricas: tecido, foco, dobra, artefato, cor","Vetor de scores por patch, não só sim/não","Rejeição alta = alerta de re-scan"]});
+  y=g.flowB+G1+6; put(g,"patch",{y:y,w:240,h:96,cx:CX,kind:"diamond",tone:"dec",t:"Patch aceitável?",l:["limiar a calibrar"]});
+  put(g,"reject",{y:y+12,cx:SIDE,w:WS,tone:"fail",t:"Patch descartado",l:["Não consome GPU","Contagem por motivo vai ao .h5"]});
+  y=g.flowB+G1+6; put(g,"norm",{y:y,w:WM,cx:CX,tone:"ai",spec:1,t:"Normalização Macenko",l:["Reduz variação de coloração entre labs","Está no plano técnico, ausente no Mermaid","Sem LoRA, é a principal defesa de domínio"]});
+  y=g.flowB+G1; put(g,"hibou",{y:y,w:WM,cx:CX,tone:"ai",t:"Hibou-L — ViT-L/14 (DINOv2)",l:["Pesos congelados: sem LoRA, sem fine-tuning","Lote em fp16 até saturar os 16 GB da T4","Mesmo extrator para todos os tenants"]});
+  y=g.flowB+G1; put(g,"emb",{y:y,w:WM,cx:CX,tone:"ai",t:"Embedding 1024d por patch",l:["Única saída da GPU","Mudar a versão torna todo .h5 legado"]});
+  y=g.flowB+G1; put(g,"consol",{y:y,w:WM,cx:CX,tone:"gpu",t:"Consolidação HDF5",l:["Escrita única por lâmina","Grava temporário e renomeia ao fim","Evita .h5 parcial lido como válido"]});
+  put(g,"h5",{y:y-8,cx:STORE,w:WT,tone:"store",store:1,t:"Acervo .h5 — embeddings",l:["/embeddings   [N×1024] float16","/coordinates  [N×2] int32 (nível 0)","/qc_scores    [N×K] float32","attrs: tenant, mpp, tile, extractor_version"]});
+  y=g.flowB+G1; put(g,"jobdone",{y:y,w:WM,cx:CX,tone:"ok",t:"Job COMPLETED",l:["Status e ponteiro do .h5 no Postgres","Lâmina pronta para inferência em CPU"]});
+  const f4=frame(g,["worker","fail","jobdone"],"4 · PLANO DE DADOS — VM GPU T4 16 GB · offline, 1 passada por lâmina",{x:FX,w:FW});
+
+  y=f4.y+f4.h+GG;
+  put(g,"work",{y:y,w:WM,cx:CX,t:"Workspace React",l:["Viewer de deep zoom + overlay de heatmap","Roda na mesma VM CPU do plano de controle"]});
+  y=g.flowB+G1; put(g,"fetch",{y:y,w:WM,cx:CX,t:"API busca o .h5 no Blob",l:["Sem GPU no caminho crítico","Extrator incompatível → reprocessar"]});
+  y=g.flowB+G1; put(g,"router",{y:y,w:WM,cx:CX,t:"Roteador de modelos",l:["Órgão → ABMIL + versão ativa","Sem regra para órgão vazio ou sem modelo","Ponto de erro silencioso hoje"]});
+  put(g,"lismeta",{y:y+8,cx:GUT,w:WG,t:"Metadados do LIS",l:["Órgão do caso (LIS)","seleciona o modelo"]});
+  put(g,"models",{y:y,cx:STORE,w:WT,tone:"store",store:1,t:"Registro de modelos ABMIL",l:["Um modelo por órgão, versionado","Versão ativa por tenant","Guarda métricas e quem aprovou"]});
+  y=g.flowB+G1+16; put(g,"proj",{y:y,w:WA,cx:CX,tone:"ai",t:"Projeção",l:["1024d → dimensão interna"]});
+  y=g.flowB+14; put(g,"att",{y:y,w:WA,cx:CX,tone:"ai",t:"Atenção por instância",l:["Peso por patch (MIL)"]});
+  y=g.flowB+14; put(g,"clas",{y:y,w:WA,cx:CX,tone:"ai",t:"Classificador",l:["Predição por lâmina"]});
+  y=g.flowB+14; put(g,"outp",{y:y,w:WA,cx:CX,tone:"ai",t:"Saídas",l:["Predição · atenção · incerteza"]});
+  put(g,"heat",{y:y-8,cx:GUT,w:WG,tone:"ai",t:"Heatmap de atenção",l:["Atenção × coordenadas","Overlay sobre a imagem"]});
+  g.subframes.push({x:g.N.proj.x-16,y:g.N.proj.y-30,w:WA+32,h:g.N.outp.b-g.N.proj.y+46,t:"ABMIL — modelo do órgão"});
+  y=g.flowB+G1+16; put(g,"unc",{y:y,w:250,h:100,cx:CX,kind:"diamond",tone:"dec",t:"Incerteza / tipo",l:["limiares a calibrar"]});
+  put(g,"normal",{y:y-6,cx:SIDE,w:WS,tone:"ok",t:"Verde — alta confiança",l:["Segue para revisão com heatmap"]});
+  put(g,"uncert",{y:y+64,cx:SIDE,w:WS,tone:"dec",t:"Amarelo — confiança baixa",l:["Entropia alta ou margem pequena"]});
+  put(g,"outlier",{y:y+134,cx:SIDE,w:WS,tone:"al",t:"Laranja — outlier / OOD",l:["Longe do domínio de treino"]});
+  y=g.flowB+G1+10; put(g,"sign",{y:y,w:WM,cx:CX,tone:"ok",t:"Revisão e assinatura",l:["Nenhum estado dispensa o patologista","Registrar se a IA foi vista antes ou depois"]});
+  const f5=frame(g,["work","heat","outlier","sign"],"5 · FLUXO ONLINE — CPU · caminho crítico do patologista",{x:FX,w:FW});
+
+  y=f5.y+f5.h+GG;
+  put(g,"alq",{y:y,cx:CX+168,w:WS,tone:"al",t:"Fila de aprendizado ativo",l:["Casos incertos, revisão priorizada"]});
+  put(g,"hardq",{y:y+72,cx:CX-168,w:WS,tone:"al",t:"Fila de hard case",l:["Outliers e anomalias"]});
+  y=g.flowB+G1; put(g,"review",{y:y,w:WM,cx:CX,tone:"al",t:"Revisão do especialista",l:["Laudo real como rótulo","Guarda versão do modelo e concordância"]});
+  y=g.flowB+G1; put(g,"label",{y:y,w:WM,cx:CX,tone:"al",t:"Ground truth estruturado",l:["Taxonomia fixa de classes","Grava no Postgres e na base de treino"]});
+  put(g,"aldata",{y:y,cx:STORE,w:WT,tone:"store",store:1,t:"Base de aprendizado ativo",l:["Casos difíceis com laudo real","Separação por caso e por laboratório"]});
+  y=g.flowB+G1; put(g,"retrain",{y:y,w:WM,cx:CX,tone:"al",t:"Retreino só da cabeça ABMIL",l:["Consome os .h5 já existentes","Nenhuma WSI é reaberta: ciclo de horas","Extrator congelado = GPU quase zero"]});
+  y=g.flowB+G1; put(g,"valid",{y:y,w:WM,cx:CX,tone:"al",t:"Validação e versionamento",l:["Hold-out travado por caso e por lab","Métricas por classe, órgão e cliente","Faltam drift e auditoria de equidade"]});
+  y=g.flowB+G1; put(g,"deploy",{y:y,w:WM,cx:CX,tone:"al",t:"Publicação da nova versão",l:["Sombra → 1 tenant → todos","Rollback de um passo"]});
+  const f6=frame(g,["alq","hardq","deploy"],"6 · APRENDIZADO CONTÍNUO — o laudo assinado é o rótulo",{x:FX,w:FW});
+  const fS=frame(g,["blobwsi","h5","models","aldata"],"ARMAZENAMENTO — Azure Blob",{x:1120,w:320,store:1});
+
+  edge(g,"scanner","ext","WSI (.svs / .tiff / .mrxs)","down");
+  edge(g,"lis","ext","case_id · órgão · tenant","down");
+  edge(g,"ext","api","POST /v1/jobs","down");
+  edge(g,"ext","blobwsi","upload com URL assinada","right-down");
+  edge(g,"api","db","cria job · grava auditoria","right");
+  edge(g,"api","queue","job_id · wsi_uri · tenant · organ","down");
+  edge(g,"queue","worker","entrega 1 job","down");
+  edge(g,"blobwsi","worker","leitura em streaming","bus-lr",{bus:1105});
+  edge(g,"worker","load",null,"down");
+  edge(g,"load","qc1",null,"down");
+  edge(g,"qc1","tissue",null,"down");
+  edge(g,"tissue","fail","não","right");
+  edge(g,"tissue","tiling","sim","down");
+  edge(g,"tiling","qc2",null,"down");
+  edge(g,"qc2","patch",null,"down");
+  edge(g,"patch","reject","não","right");
+  edge(g,"patch","norm","sim","down");
+  edge(g,"norm","hibou","patches normalizados","down");
+  edge(g,"hibou","emb",null,"down");
+  edge(g,"emb","consol",null,"down");
+  edge(g,"tiling","consol","coordenadas X/Y","bus-left",{bus:130,fb:.32});
+  edge(g,"qc2","consol","scores de QC","bus-left",{bus:186,fb:.68});
+  edge(g,"consol","h5","escrita única do .h5","right");
+  edge(g,"consol","jobdone",null,"down");
+  edge(g,"jobdone","db","status do job · métricas de GPU","bus-right",{bus:1035,dash:1});
+  edge(g,"work","fetch","abre o caso","down");
+  edge(g,"h5","fetch","embeddings + coordenadas","bus-lr",{bus:1105});
+  edge(g,"fetch","router",null,"down");
+  edge(g,"lismeta","router","órgão","right");
+  edge(g,"models","router","versão ativa","left");
+  edge(g,"router","proj","N × 1024d","down");
+  edge(g,"proj","att",null,"down");
+  edge(g,"att","clas",null,"down");
+  edge(g,"clas","outp",null,"down");
+  edge(g,"att","heat","pesos de atenção","left",{mx:287});
+  edge(g,"outp","heat","predição","left",{mx:287});
+  edge(g,"outp","unc",null,"down");
+  edge(g,"unc","normal","alta confiança","right",{mx:646});
+  edge(g,"unc","uncert","incerto","right",{mx:672});
+  edge(g,"unc","outlier","anomalia","right",{mx:698});
+  edge(g,"heat","sign","overlay na imagem","down",{ft:.28,my:-26});
+  edge(g,"normal","sign","liberado para laudo","bus-right",{bus:1060,fb:.5});
+  edge(g,"uncert","alq",null,"bus-right",{bus:1078});
+  edge(g,"outlier","hardq",null,"bus-right",{bus:1096});
+  edge(g,"alq","review",null,"down",{ft:.68});
+  edge(g,"hardq","review",null,"down",{ft:.32});
+  edge(g,"sign","label","laudo assinado = rótulo","bus-left",{bus:130,dash:1});
+  edge(g,"review","label",null,"down");
+  edge(g,"label","aldata","ground truth validado","right");
+  edge(g,"aldata","retrain","só os .h5, sem reabrir WSI","bus-lr",{bus:1105});
+  edge(g,"retrain","valid",null,"down");
+  edge(g,"valid","deploy","aprovado","down");
+  edge(g,"deploy","models","nova versão em produção","bus-right",{bus:1478});
+
+  g.sections=[{n:"Tudo",f:null},{n:"Origem",f:f1},{n:"Controle",f:f2},{n:"Fila",f:f3},
+              {n:"Offline · GPU",f:f4},{n:"Armazenamento",f:fS},{n:"Online",f:f5},{n:"Aprendizado",f:f6}];
+  return g;
+}
+
+/* ===================== sub-mapas ===================== */
+const W2=1060, C2=430, S2=840, WB=340, WS2=300;
+
+function subQC1(){
+  const g=newG("qc1",{W:W2,title:"QC fase 1 — detecção de tecido na miniatura"});
+  let y=54;
+  const step=(id,d)=>{d.y=y;d.cx=C2;d.w=d.w||WB;d.tone=d.tone||"gpu";put(g,id,d); y=g.flowB+26;};
+  step("a0",{t:"Entrada — nível baixo da pirâmide",tone:"ctrl",l:["Miniatura ou nível de ~2–8 µm/px (1,25–5×)","Custo desprezível: o nível 0 não é tocado","Todo o QC 1 roda em CPU, antes da GPU"]});
+  step("a1",{t:"1 · Conversão de espaço de cor",l:["RGB → HSV; o canal S separa vidro de tecido","Vidro: claro e dessaturado. Tecido: saturado","Alternativa: densidade óptica (−log da intensidade)"]});
+  step("a2",{t:"2 · Limiar de Otsu no canal S",l:["Limiar calculado por lâmina, não fixo global","Absorve variação de exposição entre scanners","Saída: máscara binária bruta"]});
+  step("a3",{t:"3 · Morfologia",l:["Abertura remove poeira e ruído isolado","Fechamento une fragmentos do mesmo corte","Preenchimento de buracos (lúmen, adiposo)","Kernel definido em µm e convertido por mpp"]});
+  step("a4",{t:"4 · Componentes conexos",l:["Descarta fragmentos abaixo da área mínima","Guarda bounding box de cada fragmento","Nº de fragmentos é sinal clínico útil"]});
+  put(g,"a4b",{y:g.N.a4.y-6,cx:S2,w:WS2,tone:"dec",t:"Filtro de artefatos",l:["Caneta: matiz fora da faixa de H&E","Etiqueta, borda da lamínula, bolha grande","Sombra de montagem e sujeira do vidro","Sem esse filtro, tinta vira 'tecido'"]});
+  step("a5",{t:"5 · Métricas da lâmina",tone:"ctrl",l:["Área de tecido em mm² (não em pixels)","Nº de fragmentos e maior fragmento","% da área útil da lâmina"]});
+  y+=4;
+  put(g,"a6",{y:y,cx:C2,w:250,h:100,kind:"diamond",tone:"dec",t:"Área ≥ limiar?",l:["limiar por tipo de material"]});
+  put(g,"a7",{y:y+6,cx:S2,w:WS2,tone:"fail",t:"QC_FAILED",l:["Motivo: material insuficiente","Job encerrado antes de gastar GPU","Aviso volta ao LIS para nova lâmina"]});
+  y=g.flowB+26;
+  put(g,"a8",{y:y,cx:C2,w:WB,tone:"ok",t:"Máscara de tecido → tiling",l:["Máscara + bounding boxes","Define onde a grade de patches é gerada"]});
+  y=g.flowB+30;
+  put(g,"a9",{y:y,cx:C2,w:WB+70,tone:"al",spec:1,t:"Decisão em aberto — limiar em mm², não em %",
+    l:["Biópsia endoscópica ocupa menos de 1% da lâmina","Limiar percentual reprovaria material válido","Calibrar por tipo: biópsia, peça cirúrgica, citologia","Sem calibração, a taxa de QC_FAILED é imprevisível"]});
+  edge(g,"a0","a1",null,"down"); edge(g,"a1","a2",null,"down"); edge(g,"a2","a3",null,"down");
+  edge(g,"a3","a4",null,"down"); edge(g,"a4","a4b","matiz e forma","right");
+  edge(g,"a4","a5",null,"down"); edge(g,"a5","a6",null,"down");
+  edge(g,"a6","a7","não","right"); edge(g,"a6","a8","sim","down"); edge(g,"a8","a9",null,"down",{dash:1});
+  return g;
+}
+
+function subQC2(){
+  const g=newG("qc2",{W:W2,title:"QC fase 2 — as seis métricas por patch"});
+  let y=54;
+  const step=(id,d)=>{d.y=y;d.cx=C2;d.w=d.w||WB;d.tone=d.tone||"gpu";put(g,id,d); y=g.flowB+22;};
+  step("b0",{t:"Entrada — patch no nível de trabalho",tone:"ctrl",l:["Roda em CPU, antes de ocupar a GPU","Rejeitar aqui economiza inferência"]});
+  step("b1",{t:"1 · Fração de tecido no patch",l:["Máscara recalculada na resolução de trabalho","Patch majoritariamente vidro é descartado","Limiar típico entre 30% e 50% — a calibrar"]});
+  step("b2",{t:"2 · Nitidez (foco)",l:["Variância do Laplaciano + Tenengrad (Sobel)","Normalizar pelo percentil da própria lâmina","Valor absoluto confunde textura densa com foco","Corte relativo sobrevive à troca de scanner"]});
+  step("b3",{t:"3 · Dobra de tecido",l:["Diferença entre saturação e luminância","Dobra: mais escura e mais saturada que o entorno","Dobra passa no teste de foco e engana o modelo"]});
+  step("b4",{t:"4 · Artefatos",l:["Bolha: borda circular, interior sem textura","Caneta: matiz fora da faixa de H&E","Poeira, risco no vidro, borda da lamínula"]});
+  step("b5",{t:"5 · Coloração",l:["Deconvolução de cor separa H e E","Densidade óptica média de cada canal","Detecta sub e sobrecoloração da lâmina"]});
+  step("b6",{t:"6 · Redundância",tone:"ai",spec:1,l:["Patch quase idêntico ao vizinho agrega pouco","Opcional: amostrar para cortar custo de GPU","Não está no desenho atual"]});
+  step("b7",{t:"Vetor de scores [K] por patch",tone:"ctrl",l:["Os K valores vão inteiros para o .h5","Permite auditar a rejeição depois do fato","Base do alerta operacional ao laboratório"]});
+  y+=4;
+  put(g,"b8",{y:y,cx:C2,w:270,h:100,kind:"diamond",tone:"dec",t:"Todos os limiares OK?",l:["regra por métrica"]});
+  put(g,"b9",{y:y+6,cx:S2,w:WS2,tone:"fail",t:"Patch descartado",l:["Motivo do descarte é contabilizado","Não gasta GPU nem espaço no .h5"]});
+  y=g.flowB+24;
+  put(g,"b10",{y:y,cx:C2,w:WB,tone:"ok",t:"Patch aceito",l:["Segue para normalização e extração"]});
+  put(g,"b11",{y:y-4,cx:S2,w:WS2,tone:"al",t:"Agregado da lâmina",l:["% rejeitado por motivo","Acima do limite: alerta de re-scan","Rejeição alta = scanner ou coloração"]});
+  y=g.flowB+30;
+  put(g,"b12",{y:y,cx:C2,w:WB+90,tone:"al",spec:1,t:"Decisão em aberto — filtrar antes ou depois do Hibou?",
+    l:["Antes (desenho atual): barato, mas mudar o limiar exige reprocessar a lâmina inteira","Depois: guarda embedding de todo patch e filtra na inferência — flexível, custa GPU e storage","Meio-termo: guardar embedding só dos patches na faixa de dúvida","A escolha decide se calibrar QC é ajuste de config ou reprocessamento de acervo"]});
+  edge(g,"b0","b1",null,"down"); edge(g,"b1","b2",null,"down"); edge(g,"b2","b3",null,"down");
+  edge(g,"b3","b4",null,"down"); edge(g,"b4","b5",null,"down"); edge(g,"b5","b6",null,"down");
+  edge(g,"b6","b7",null,"down"); edge(g,"b7","b8",null,"down");
+  edge(g,"b8","b9","não","right"); edge(g,"b8","b10","sim","down");
+  edge(g,"b10","b11","contagem por motivo","right"); edge(g,"b10","b12",null,"down",{dash:1});
+  return g;
+}
+
+function subHibou(){
+  const g=newG("hibou",{W:W2,title:"Extração de características — Hibou-L congelado"});
+  let y=54;
+  const step=(id,d)=>{d.y=y;d.cx=C2;d.w=d.w||WB;d.tone=d.tone||"ai";put(g,id,d); y=g.flowB+26;};
+  step("c0",{t:"Lote de patches aceitos",tone:"gpu",l:["Tamanho do lote limitado pelos 16 GB da T4","Lote maior usa melhor a GPU e consome mais RAM"]});
+  step("c1",{t:"1 · Pré-processamento",l:["Redimensiona para a entrada do modelo","Normaliza por média e desvio do pré-treino","Precisa ser idêntico ao usado no treino do Hibou"]});
+  step("c2",{t:"2 · ViT-L/14",l:["Divide o patch em sub-patches de 14×14 px","24 blocos de atenção, dimensão interna 1024","Pré-treino DINOv2 sobre lâminas de patologia","Pesos congelados, hash registrado por versão"]});
+  step("c3",{t:"3 · Agregação do token",l:["Token CLS ou média dos tokens → vetor 1024d","A escolha precisa ser fixa e versionada","Trocar depois invalida comparação com o acervo"]});
+  step("c4",{t:"Saída — N × 1024 em fp16",tone:"gpu",l:["Única coisa que sai da GPU","A imagem não é armazenada de novo"]});
+  put(g,"c5",{y:g.N.c2.y,cx:S2,w:WS2,tone:"fail",t:"Licença a auditar",l:["CellViT-Hibou-L: CC-BY-NC-SA-4.0","Incompatível com uso comercial","Confirmar a licença do peso em produção"]});
+  put(g,"c6",{y:g.N.c3.y+10,cx:S2,w:WS2,tone:"al",t:"Versão no arquivo",l:["extractor_version grava no .h5","É o que diz qual acervo reprocessar","Sem isso, atualizar vira retrabalho cego"]});
+  y=g.flowB+28;
+  put(g,"c7",{y:y,cx:C2,w:WB+80,tone:"store",t:"Por que congelar compensa",
+    l:["Um extrator só para todos os tenants: dado de um cliente não entra no modelo de outro","Retreino consome .h5, não WSI — ciclo de horas em vez de semanas","GPU vira custo único por lâmina, não por experimento","Preço: nenhuma adaptação ao scanner ou à coloração de cada laboratório"]});
+  edge(g,"c0","c1",null,"down"); edge(g,"c1","c2",null,"down"); edge(g,"c2","c3",null,"down");
+  edge(g,"c3","c4",null,"down"); edge(g,"c2","c5",null,"right"); edge(g,"c3","c6",null,"right");
+  edge(g,"c4","c7",null,"down",{dash:1});
+  return g;
+}
+
+function subABMIL(){
+  const g=newG("abmil",{W:W2,title:"ABMIL — como a predição da lâmina é formada"});
+  let y=54;
+  const step=(id,d)=>{d.y=y;d.cx=C2;d.w=d.w||WB;d.tone=d.tone||"ai";put(g,id,d); y=g.flowB+24;};
+  step("d0",{t:"Entrada — N × 1024 de um caso",tone:"store",l:["N = patches aceitos da lâmina","Uma 'bolsa' de instâncias sem rótulo individual"]});
+  step("d1",{t:"1 · Projeção",l:["Linear 1024 → D, ReLU e dropout","D interno a definir (ordem de 256–512)","Reduz custo e regulariza"]});
+  step("d2",{t:"2 · Atenção com gate",l:["Ramo tanh(V·h) multiplicado por sigmoid(U·h)","Score por patch; softmax sobre os N soma 1","O gate deixa o modelo ignorar região irrelevante"]});
+  step("d3",{t:"3 · Agregação",l:["z = Σ wᵢ · hᵢ — um vetor por lâmina","O tamanho de N não muda a dimensão de z"]});
+  step("d4",{t:"4 · Classificador",l:["Linear sobre z → logits → softmax","Treinado só com o rótulo da lâmina (MIL)"]});
+  step("d5",{t:"5 · Incerteza",tone:"dec",l:["Entropia da distribuição de classes","Margem entre as duas maiores probabilidades","OOD: distância no espaço de embeddings"]});
+  step("d6",{t:"Saídas",tone:"ok",l:["Predição por lâmina","wᵢ por patch → heatmap","Escore de incerteza → encaminhamento"]});
+  put(g,"d7",{y:g.N.d2.y-4,cx:S2,w:WS2,tone:"al",t:"Treino MIL",l:["Rótulo por lâmina, não por pixel","Dispensa anotação manual exaustiva","É o que torna o laudo assinado um rótulo"]});
+  put(g,"d8",{y:g.N.d5.y-8,cx:S2,w:WS2,tone:"fail",t:"Calibração ausente",l:["Softmax puro superestima confiança","Temperature scaling ou predição conforme","Sem isso, limiar clínico não se sustenta"]});
+  y=g.flowB+28;
+  put(g,"d9",{y:y,cx:C2,w:WB+80,tone:"store",t:"O que a atenção é e o que não é",
+    l:["É onde o modelo concentrou peso para decidir — evidência visual para conferência","Não é explicação causal nem marcação de lesão","Não deve ser apresentada ao patologista como delimitação diagnóstica"]});
+  edge(g,"d0","d1",null,"down"); edge(g,"d1","d2",null,"down"); edge(g,"d2","d3",null,"down");
+  edge(g,"d3","d4",null,"down"); edge(g,"d4","d5",null,"down"); edge(g,"d5","d6",null,"down");
+  edge(g,"d2","d7",null,"right"); edge(g,"d5","d8",null,"right"); edge(g,"d6","d9",null,"down",{dash:1});
+  return g;
+}
+
+function subQueue(){
+  const g=newG("queue",{W:W2,title:"Ciclo de vida do job — fila, retry e dead-letter"});
+  let y=54;
+  put(g,"e0",{y:y,cx:C2,w:WB,tone:"ctrl",t:"QUEUED",l:["Mensagem na fila com job_id e tenant_id","Idempotente: a mesma lâmina não gera dois .h5"]});
+  y=g.flowB+26; put(g,"e1",{y:y,cx:C2,w:WB,tone:"gpu",t:"RUNNING",l:["Worker toma a mensagem (visibility timeout)","Heartbeat de progresso enquanto processa","Timeout precisa superar o pior tempo medido"]});
+  y=g.flowB+28; put(g,"e2",{y:y,cx:C2,w:260,h:100,kind:"diamond",tone:"dec",t:"Resultado?",l:["três saídas"]});
+  put(g,"e3",{y:y-76,cx:S2,w:WS2,tone:"ok",t:"COMPLETED",l:[".h5 gravado e ponteiro no Postgres"]});
+  put(g,"e4",{y:y+8,cx:S2,w:WS2,tone:"fail",t:"QC_FAILED",l:["Terminal e clínico, não técnico","Precisa de aviso de volta ao LIS"]});
+  y=g.flowB+30; put(g,"e5",{y:y,cx:C2,w:270,h:100,kind:"diamond",tone:"dec",t:"Tentativas < máx?",l:["falha técnica"]});
+  put(g,"e6",{y:y-4,cx:S2,w:WS2,tone:"al",t:"Retry com backoff",l:["Volta para QUEUED com attempt+1","Backoff exponencial evita tempestade"]});
+  y=g.flowB+28; put(g,"e7",{y:y,cx:C2,w:WB,tone:"fail",t:"DEAD_LETTER",l:["Exige alarme ativo","Silêncio aqui significa caso perdido","Reprocessamento manual após diagnóstico"]});
+  y=g.flowB+28;
+  put(g,"e8",{y:y,cx:C2,w:WB+90,tone:"store",t:"Três garantias que sustentam a fila",
+    l:["Idempotência por job_id: reentrega nunca duplica trabalho","Visibility timeout maior que o pior caso: evita dois workers na mesma lâmina","Dead-letter com alarme: falha silenciosa é pior do que falha ruidosa"]});
+  edge(g,"e0","e1",null,"down"); edge(g,"e1","e2",null,"down");
+  edge(g,"e2","e3","sucesso","right",{mx:650}); edge(g,"e2","e4","sem tecido","right",{mx:680});
+  edge(g,"e2","e5","falha técnica","down");
+  edge(g,"e5","e6","sim","right"); edge(g,"e6","e0","volta à fila","bus-right",{bus:1020,dash:1,fb:.3});
+  edge(g,"e5","e7","não","down"); edge(g,"e7","e8",null,"down",{dash:1});
+  return g;
+}
+
+function subH5(){
+  const g=newG("h5",{W:W2,title:"Arquivo .h5 — a unidade de trabalho do sistema"});
+  let y=54;
+  put(g,"g0",{y:y,cx:C2,w:WB+40,tone:"store",t:"Um arquivo por lâmina",l:["Escrita única do worker, leitura por todo o resto","Grava em nome temporário e renomeia ao fim"]});
+  y=g.flowB+26;
+  put(g,"g1",{y:y,cx:C2,w:WB+40,tone:"ai",t:"/embeddings — [N × 1024] float16",l:["Vetor do Hibou-L por patch aceito","fp16 corta o armazenamento pela metade","Validar impacto na acurácia antes de adotar"]});
+  y=g.flowB+18;
+  put(g,"g2",{y:y,cx:C2,w:WB+40,tone:"ctrl",t:"/coordinates — [N × 2] int32",l:["X, Y em pixels do nível 0","É o que reconstrói o heatmap sobre a imagem","Sem elas, a atenção não volta ao espaço da lâmina"]});
+  y=g.flowB+18;
+  put(g,"g3",{y:y,cx:C2,w:WB+40,tone:"gpu",t:"/qc_scores — [N × K] float32",l:["As K métricas de QC daquele patch","Permite auditar a rejeição sem reprocessar"]});
+  y=g.flowB+18;
+  put(g,"g4",{y:y,cx:C2,w:WB+40,tone:"al",t:"attrs — identidade e versões",l:["tenant_id, case_id, slide_id, wsi_sha256","mpp, magnificação, tile_size, stride","extractor, extractor_version, qc_version","n_patches, n_rejected, created_at"]});
+  put(g,"g5",{y:g.N.g1.y,cx:S2,w:WS2,tone:"gpu",t:"Escreve",l:["GPU Worker, uma vez por lâmina"]});
+  put(g,"g6",{y:g.N.g2.y+6,cx:S2,w:WS2,tone:"ctrl",t:"Lê na inferência",l:["API carrega em CPU, sem GPU","Milissegundos por caso"]});
+  put(g,"g7",{y:g.N.g4.y,cx:S2,w:WS2,tone:"al",t:"Lê no retreino",l:["Treino do ABMIL sem reabrir WSI","Ciclo de horas, GPU quase zero"]});
+  y=g.flowB+30;
+  put(g,"g8",{y:y,cx:C2,w:WB+100,tone:"fail",t:"O risco que mora aqui",
+    l:["Trocar a versão do Hibou-L transforma todo o acervo em legado","Sem extractor_version gravado, não há como saber o que reprocessar","Custo do acervo pode superar a receita por lâmina — decidir retenção antes de escalar"]});
+  edge(g,"g0","g1",null,"down"); edge(g,"g1","g2",null,"down"); edge(g,"g2","g3",null,"down"); edge(g,"g3","g4",null,"down");
+  edge(g,"g1","g5",null,"right"); edge(g,"g2","g6",null,"right"); edge(g,"g4","g7",null,"right");
+  edge(g,"g4","g8",null,"down",{dash:1});
+  return g;
+}
+
+function subRouter(){
+  const g=newG("router",{W:W2,title:"Roteador de modelos — e os caminhos de exceção que faltam"});
+  let y=54;
+  put(g,"r0",{y:y,cx:C2,w:WB,tone:"ctrl",t:"Metadado de órgão do LIS",l:["Campo livre na maioria dos LIS","A qualidade do dado decide a rota"]});
+  y=g.flowB+28; put(g,"r1",{y:y,cx:C2,w:270,h:96,kind:"diamond",tone:"dec",t:"Órgão preenchido?",l:["porta 1"]});
+  put(g,"r2",{y:y-6,cx:S2,w:WS2,tone:"fail",spec:1,t:"Exceção — não existe hoje",l:["Caso deveria ir a triagem manual","Hoje o comportamento é indefinido"]});
+  y=g.flowB+28; put(g,"r3",{y:y,cx:C2,w:WB,tone:"ctrl",spec:1,t:"Normalização do termo",l:["Dicionário de sinônimos e grafias","'gástrico', 'antro', 'estômago' → estomago","Sem isso, o mesmo órgão vira rotas diferentes"]});
+  y=g.flowB+26; put(g,"r4",{y:y,cx:C2,w:280,h:96,kind:"diamond",tone:"dec",t:"Há modelo para o órgão?",l:["porta 2"]});
+  put(g,"r5",{y:y-6,cx:S2,w:WS2,tone:"al",spec:1,t:"Caso segue sem IA",l:["A interface precisa dizer isso ao patologista","Silêncio seria pior: parece que a IA concordou"]});
+  y=g.flowB+28; put(g,"r6",{y:y,cx:C2,w:WB,tone:"store",t:"Versão ativa para o tenant",l:["Contrato pode congelar a versão do cliente","Evita mudar resultado no meio de um caso","Registro guarda quem aprovou cada versão"]});
+  y=g.flowB+24; put(g,"r7",{y:y,cx:C2,w:WB,tone:"ai",t:"Carrega o ABMIL do órgão",l:["Modelo pequeno, roda em CPU","Inferência em milissegundos"]});
+  y=g.flowB+28;
+  put(g,"r8",{y:y,cx:C2,w:WB+90,tone:"fail",t:"Por que este é o ponto frágil do desenho",
+    l:["Todo o roteamento depende de um campo de texto do LIS do cliente","Órgão errado escolhe o modelo errado e devolve predição confiante e inválida","Nenhum dos caminhos de exceção acima existe no diagrama atual"]});
+  edge(g,"r0","r1",null,"down"); edge(g,"r1","r2","não","right"); edge(g,"r1","r3","sim","down");
+  edge(g,"r3","r4",null,"down"); edge(g,"r4","r5","não","right"); edge(g,"r4","r6","sim","down");
+  edge(g,"r6","r7",null,"down"); edge(g,"r7","r8",null,"down",{dash:1});
+  return g;
+}
+
+function subValid(){
+  const g=newG("valid",{W:W2,title:"Governança de versão — do candidato à produção"});
+  let y=54;
+  const step=(id,d)=>{d.y=y;d.cx=C2;d.w=d.w||WB;d.tone=d.tone||"al";put(g,id,d); y=g.flowB+24;};
+  step("v0",{t:"Modelo candidato",l:["Retreino da cabeça ABMIL sobre os .h5"]});
+  step("v1",{t:"1 · Conjunto de teste travado",l:["Separado por caso e por laboratório","Nunca usado em treino nem em seleção","Vazamento aqui invalida toda a validação"]});
+  step("v2",{t:"2 · Métricas",l:["Por classe, por órgão e por laboratório","Sensibilidade priorizada sobre acurácia global","Matriz de confusão por tipo de erro clínico"]});
+  step("v3",{t:"3 · Não inferior à produção?",tone:"dec",kind:"diamond",w:300,h:100,l:["porta de aprovação"]});
+  put(g,"v4",{y:g.N.v3.y-6,cx:S2,w:WS2,tone:"fail",t:"Rejeitado",l:["Registra motivo e métricas","Candidato fica no histórico"]});
+  step("v5",{t:"4 · Aprovação registrada",l:["Quem aprovou, quando e com quais dados","Hash dos conjuntos de treino e teste","Base da trilha de auditoria"]});
+  step("v6",{t:"5 · Sombra",tone:"ctrl",l:["Roda em paralelo sem exibir resultado","Compara com a versão ativa em casos reais"]});
+  step("v7",{t:"6 · Canário — 1 tenant",tone:"ctrl",l:["Liberação para um laboratório","Métricas acompanhadas por período fixo"]});
+  step("v8",{t:"7 · Liberação geral",tone:"ok",l:["Versão ativa para todos os tenants","Rollback de um passo, sempre disponível"]});
+  y=g.flowB+28;
+  put(g,"v9",{y:y,cx:C2,w:WB+100,tone:"fail",t:"O que falta para isso ser defensável",
+    l:["Protocolo de mudança predeterminado (tipo PCCP): o que muda sem nova validação clínica","Monitoramento formal de drift: o desempenho cai devagar e ninguém percebe","Auditoria de equidade por subgrupo demográfico","Regra escrita de quando atualizar deixa de ser ajuste e vira produto novo"]});
+  edge(g,"v0","v1",null,"down"); edge(g,"v1","v2",null,"down"); edge(g,"v2","v3",null,"down");
+  edge(g,"v3","v4","não","right"); edge(g,"v3","v5","sim","down"); edge(g,"v5","v6",null,"down");
+  edge(g,"v6","v7",null,"down"); edge(g,"v7","v8",null,"down"); edge(g,"v8","v9",null,"down",{dash:1});
+  return g;
+}
+
+const SUBS={qc1:subQC1,tissue:subQC1,qc2:subQC2,patch:subQC2,hibou:subHibou,norm:subHibou,emb:subHibou,
+  proj:subABMIL,att:subABMIL,clas:subABMIL,outp:subABMIL,unc:subABMIL,
+  queue:subQueue,worker:subQueue,consol:subH5,h5:subH5,router:subRouter,valid:subValid,deploy:subValid};
+
+/* ===================== especificações ===================== */
+const DOC={
+  scanner:{s:"Fronteira física do sistema",
+    how:["Digitaliza a lâmina corada em pirâmide multi-resolução.","A magnificação de varredura define o nível de trabalho do tiling (tipicamente 20×).","Qualidade de foco e coloração aqui determina a taxa de rejeição no QC 2."],
+    par:[["Formato de saída","depende do modelo Motic — confirmar"],["mpp do nível 0","precisa estar no metadado do arquivo"]],
+    fal:["Foco irregular eleva a rejeição de patches","Formato proprietário pode exigir conversão antes da leitura"]},
+  lis:{s:"Fonte de verdade do caso",
+    how:["Fornece case_id, órgão, tipo de material e identificação do paciente.","O campo de órgão é o que seleciona o modelo mais adiante.","PathoWatch tem integração nativa; PathoWeb depende de extração autorizada."],
+    fal:["Órgão ausente ou com grafia divergente quebra o roteamento","O direito de acesso ao PathoWeb vem da licença do fornecedor, não da posse do dado"],
+    abr:["Formalizar autorização escrita antes de extração programática em cada novo cliente"]},
+  ext:{s:"Evita mudar o LIS do cliente",
+    how:["Casa o arquivo WSI com o caso aberto no LIS.","Pede URL assinada à API e sobe o arquivo direto ao Blob.","Envia POST /v1/jobs com metadados e hash do arquivo."],
+    par:[["Idempotência","wsi_sha256 + case_id"],["Upload","por blocos, com retomada"]],
+    fal:["WSI sem case_id vira job órfão","Mudança de layout do LIS do fornecedor quebra a extração","Upload interrompido sem retomada desperdiça banda"]},
+  api:{s:"Plano de controle — não processa imagem",
+    how:["Autentica por JWT e resolve o tenant pelo token.","Cria o job no Postgres e publica a mensagem na fila.","Devolve URL assinada de escopo e prazo curtos para o upload.","Serve status, predição e heatmap ao workspace."],
+    par:[["Rotas","/v1/jobs · /cases/{id}/inference · /heatmap · /review · /models"],["tenant_id","sempre do token, nunca de parâmetro"]],
+    fal:["Arquivo grande passando pela API em vez de ir direto ao Blob causa timeout","Aceitar tenant_id do cliente seria vazamento entre laboratórios"]},
+  db:{s:"Estado e trilha de auditoria",
+    how:["Guarda tenants, casos, lâminas, jobs, modelos, predições, revisões e log de acesso.","Armazena o ponteiro do .h5, nunca o conteúdo.","Row-Level Security por tenant_id, no mesmo padrão do LIS próprio."],
+    fal:["Sem RLS, uma consulta mal escrita cruza dados de laboratórios diferentes"],
+    abr:["Definir retenção do log de auditoria e política de acesso para suporte"]},
+  queue:{s:"Desacopla API e GPU",
+    how:["Recebe a mensagem do job e entrega a um worker por vez.","Visibility timeout segura a mensagem enquanto o worker processa.","Falha técnica volta à fila com backoff; estouro de tentativas vai para dead-letter."],
+    par:[["Mensagem","job_id, tenant_id, case_id, wsi_uri, organ, pipeline_version, attempt"],["Escala","permite scale-to-zero da VM GPU"]],
+    fal:["Visibility timeout menor que o processamento gera duplicidade","Dead-letter sem alarme significa caso perdido em silêncio"]},
+  worker:{s:"Executa o pipeline offline inteiro",
+    how:["Consome um job por vez: uma lâmina por execução.","Lê a WSI em streaming, roda QC, tiling, normalização e extração.","Escreve o .h5 e atualiza status e métricas."],
+    fal:["GPU única é ponto de falha e teto de vazão","Processamento não idempotente geraria dois .h5 para o mesmo job"],
+    abr:["Definir tempo de partida aceitável no scale-to-zero e comportamento em pico"]},
+  load:{s:"Leitura sem estourar memória",
+    how:["Abre a pirâmide e lê por nível, em blocos.","O nível 0 só é lido nas regiões com tecido."],
+    fal:["Formato não suportado pelo leitor","Leitura em blocos pequenos faz a latência de rede dominar o tempo"]},
+  qc1:{s:"Decide se a lâmina merece GPU",
+    how:["Lê um nível baixo da pirâmide (1,25–5×), de custo desprezível.","Converte RGB para HSV: o canal de saturação separa vidro de tecido.","Aplica Otsu no canal de saturação — limiar por lâmina, não fixo.","Morfologia: abertura, fechamento e preenchimento de buracos, com kernel em µm.","Componentes conexos: descarta fragmentos abaixo da área mínima.","Filtra artefatos: caneta, etiqueta, bolha e borda da lamínula.","Calcula área de tecido em mm², nº de fragmentos e maior fragmento."],
+    par:[["Nível de leitura","~2–8 µm/px"],["Limiar de área","em mm², a calibrar por tipo de material"],["Kernel morfológico","definido em µm, convertido por mpp"]],
+    de:["Miniatura da WSI"],para:["Máscara de tecido","Bounding boxes","Área e contagem de fragmentos"],
+    fal:["Marcação de caneta lida como tecido, se o filtro de matiz não existir","Limiar percentual reprova biópsia endoscópica válida"],
+    abr:["Calibrar limiares separados para biópsia, peça cirúrgica e citologia"]},
+  tissue:{s:"Porta de QC da lâmina",
+    how:["Compara a área de tecido com o limiar do tipo de material.","Abaixo do limiar, o job encerra como QC_FAILED antes de qualquer GPU."],
+    abr:["QC_FAILED precisa de mensagem de volta ao LIS: é resultado clínico, não erro técnico"]},
+  fail:{s:"Fim legítimo de um job",
+    how:["Status terminal com motivo registrado.","Não consome GPU e não gera .h5."],
+    abr:["Definir quem é avisado no laboratório e em quanto tempo"]},
+  tiling:{s:"Onde a geometria é fixada",
+    how:["Gera a grade de patches sobre a máscara de tecido.","Tamanho, stride e magnificação ficam travados por versão de pipeline.","Registra X e Y de cada patch em pixels do nível 0."],
+    par:[["Tamanho do patch","a definir e travar (ordem de 224–512 px)"],["Stride","sem sobreposição, ou sobreposição a definir"],["Magnificação","tipicamente 20×"]],
+    fal:["Mudar qualquer parâmetro invalida os .h5 já gerados","Coordenada gravada em nível diferente do viewer desalinha o heatmap"]},
+  qc2:{s:"Seis métricas por patch, não um sim/não",
+    how:["Fração de tecido no patch, recalculada na resolução de trabalho.","Nitidez: variância do Laplaciano e Tenengrad, normalizados pelo percentil da lâmina.","Dobra de tecido: diferença entre saturação e luminância.","Artefatos: bolha, caneta, poeira e borda da lamínula.","Coloração: densidade óptica de H e E após deconvolução de cor.","Consolida tudo num vetor de K scores, gravado no .h5."],
+    par:[["Fração de tecido","limiar entre 30% e 50%, a calibrar"],["Nitidez","corte relativo por lâmina, não absoluto"],["Alvo de rejeição","medir antes de fixar"]],
+    de:["Patches do tiling"],para:["Patches aceitos","Vetor de scores [N×K]","Contagem de rejeição por motivo"],
+    fal:["Métrica de foco absoluta confunde textura densa com nitidez","Dobra de tecido passa no teste de foco e engana o modelo se não for medida","Rejeição alta sem alerta esconde problema de scanner ou de coloração"],
+    abr:["Filtrar antes ou depois do Hibou? Antes é barato mas trava o limiar; depois é flexível e custa GPU e storage"]},
+  patch:{s:"Regra de aceitação do patch",
+    how:["Combina os K scores por limiar, ou por classificador leve treinado com patches rotulados."],
+    abr:["Calibrar com 500–1000 patches rotulados por tipo de material, escolhendo o corte pela curva ROC"]},
+  reject:{s:"Descartado, mas contabilizado",
+    how:["Não gasta GPU nem espaço.","O motivo entra na contagem agregada da lâmina."],
+    abr:["Definir o limite de rejeição que dispara pedido de re-scan"]},
+  norm:{s:"Presente no plano técnico, ausente no Mermaid",
+    how:["Macenko estima a matriz de coloração da própria lâmina.","Projeta a imagem para uma referência comum de H e E.","Reduz a variação entre laboratórios e scanners antes da extração."],
+    fal:["Sem LoRA por laboratório, é a principal defesa contra variação de domínio","Aplicar normalização diferente do treino do extrator piora o resultado"],
+    abr:["Confirmar se saiu do diagrama por decisão ou por esquecimento","Se ficar, a versão do normalizador entra nos metadados do .h5"]},
+  hibou:{s:"Congelado, igual para todos os tenants",
+    how:["Pré-processa o patch conforme o pré-treino do modelo.","ViT-L/14: sub-patches de 14×14, 24 blocos de atenção, dimensão 1024.","Pré-treino DINOv2 sobre lâminas de patologia.","Agrega o token (CLS ou média) num vetor de 1024 dimensões."],
+    par:[["Precisão","fp16 no lote"],["Lote","limitado pelos 16 GB da T4 — medir"],["Pesos","congelados, hash registrado"]],
+    fal:["A licença do peso precisa de auditoria antes de uso comercial","Trocar a versão transforma todo o acervo de .h5 em legado"]},
+  emb:{s:"Única saída da GPU",
+    how:["Um vetor de 1024 dimensões por patch aceito.","A imagem não é armazenada novamente."],
+    abr:["fp16 corta storage pela metade — validar impacto na acurácia antes de adotar"]},
+  consol:{s:"Uma escrita por lâmina",
+    how:["Empacota embeddings, coordenadas, scores de QC e metadados.","Grava em nome temporário e renomeia ao final."],
+    fal:["Falha no meio da escrita deixaria arquivo parcial lido como válido","Sem extractor_version, não há como saber o que reprocessar depois"]},
+  h5:{s:"O ativo reutilizável do sistema",
+    how:["Sustenta inferência, retreino e novos órgãos sem reabrir nenhuma WSI.","Lido em CPU: milissegundos por caso."],
+    par:[["/embeddings","[N×1024] float16"],["/coordinates","[N×2] int32, nível 0"],["/qc_scores","[N×K] float32"],["attrs","tenant, mpp, tile, stride, extractor_version, qc_version"]],
+    fal:["Custo cresce linearmente com o volume de lâminas","Pode superar a receita por lâmina — resolver antes de escalar"]},
+  blobwsi:{s:"Imagem original, isolada por tenant",
+    how:["Container ou prefixo por tenant, com URL assinada de escopo curto."],
+    fal:["Maior parcela do custo de armazenamento"],
+    abr:["Política de retenção da WSI: manter, arquivar em camada fria ou descartar após prazo"]},
+  jobdone:{s:"Lâmina pronta para inferência",
+    how:["Status COMPLETED e ponteiro do .h5 gravado no caso.","Métricas de GPU e duração publicadas."]},
+  work:{s:"Onde o patologista trabalha",
+    how:["Viewer de deep zoom sobre a WSI, com overlay do heatmap.","Revisão e assinatura acontecem aqui."],
+    fal:["Heatmap desalinha se a magnificação do tiling e a do viewer divergirem"]},
+  fetch:{s:"Caminho crítico sem GPU",
+    how:["Carrega embeddings e coordenadas do Blob para a memória."],
+    fal:["Versão de extrator incompatível deve levar a reprocessamento, nunca a inferência silenciosa"]},
+  router:{s:"O ponto frágil do desenho",
+    how:["Lê o órgão dos metadados do LIS.","Normaliza o termo por dicionário de sinônimos.","Seleciona o modelo do órgão e a versão ativa para o tenant."],
+    fal:["Órgão errado escolhe o modelo errado e devolve predição confiante e inválida"],
+    abr:["Definir comportamento para órgão vazio, grafia divergente, material misto e órgão sem modelo"]},
+  lismeta:{s:"Metadado que decide a rota",
+    how:["Órgão e tipo de material vêm do cadastro do caso no LIS."],
+    fal:["Campo livre no LIS: a qualidade varia por laboratório e por digitador"]},
+  models:{s:"Registro versionado",
+    how:["Um modelo por órgão, com histórico de versões.","Guarda métricas, conjunto de validação e quem aprovou.","A versão ativa pode ser fixada por tenant."]},
+  proj:{s:"Entrada do ABMIL",how:["Linear 1024 → D, com ReLU e dropout.","D interno a definir, na ordem de 256–512."]},
+  att:{s:"Atenção com gate",
+    how:["Ramo tanh(V·h) multiplicado por sigmoid(U·h) gera o score do patch.","Softmax sobre os N patches: os pesos somam 1.","Os pesos viram o heatmap ao serem cruzados com as coordenadas."],
+    fal:["Atenção é evidência visual de apoio, não explicação causal nem delimitação de lesão"]},
+  clas:{s:"Predição por lâmina",how:["Linear sobre o vetor agregado, seguido de softmax.","Treinado apenas com o rótulo da lâmina (MIL)."]},
+  outp:{s:"Três saídas",how:["Predição, pesos de atenção e escore de incerteza."]},
+  heat:{s:"Devolve a predição ao espaço da imagem",
+    how:["Cruza os pesos de atenção com as coordenadas do .h5.","Renderiza como overlay sobre a WSI no viewer."]},
+  unc:{s:"Encaminhamento, não decisão clínica",
+    how:["Entropia e margem entre as duas maiores classes medem confiança.","Distância no espaço de embeddings detecta caso fora do domínio.","Três estados: verde, amarelo e laranja."],
+    fal:["Softmax sem calibração superestima confiança","Limiares indefinidos tornam imprevisível o volume que cai em revisão"],
+    abr:["Adotar temperature scaling ou predição conforme antes de fixar limiar clínico"]},
+  normal:{s:"Alta confiança",how:["Segue para revisão com heatmap.","Alimenta a métrica de concordância entre IA e patologista."]},
+  uncert:{s:"Confiança baixa",how:["Vai para a fila de aprendizado ativo, com prioridade de revisão."]},
+  outlier:{s:"Fora do domínio de treino",how:["Vai para a fila de hard case, com revisão obrigatória.","Volume alto aqui indica domínio novo, não caso raro."]},
+  sign:{s:"Entrega clínica e rótulo de treino",
+    how:["O patologista revisa com o heatmap como apoio e assina.","O laudo assinado vira ground truth com a versão do modelo ativa."],
+    abr:["Registrar se a IA foi vista antes ou depois da conclusão — sem isso não há como medir efeito real na acurácia"]},
+  alq:{s:"Casos incertos",how:["Concentra o que tem maior valor de rotulagem."],fal:["Sem limite de tamanho, vira acúmulo que ninguém revisa"]},
+  hardq:{s:"Outliers e anomalias",how:["Casos fora do domínio, que sinalizam limite de escopo do modelo."]},
+  review:{s:"Rotulagem pelo especialista",how:["Registra diagnóstico validado, versão do modelo e se houve discordância."]},
+  label:{s:"Ground truth estruturado",how:["Taxonomia fixa de classes por órgão.","Grava no Postgres e na base de aprendizado ativo."],fal:["Sem taxonomia fixa, o rótulo não é treinável"]},
+  aldata:{s:"Base curada de casos difíceis",
+    how:["Casos incertos e outliers com laudo real."],
+    fal:["Viés de seleção: treinar só no que o modelo errou distorce a distribuição","Separação por caso e por laboratório é obrigatória para não vazar treino no teste"]},
+  retrain:{s:"A vantagem estrutural da arquitetura",
+    how:["Treina apenas a cabeça ABMIL do órgão.","Consome os .h5 existentes: nenhuma WSI é reaberta.","Ciclo de horas, com custo de GPU quase nulo."],
+    fal:["Esquecimento catastrófico se o treino usar só casos difíceis"]},
+  valid:{s:"Portão entre experimento e produção",
+    how:["Conjunto de teste travado, separado por caso e por laboratório.","Métricas por classe, órgão e cliente.","Comparação de não inferioridade com a versão em produção.","Aprovação registrada com quem, quando e com quais dados."],
+    abr:["Faltam protocolo de mudança predeterminado, monitoramento de drift e auditoria de equidade"]},
+  deploy:{s:"Liberação gradual",
+    how:["Sombra, depois um tenant, depois todos.","Rollback de um passo sempre disponível."],
+    fal:["Promoção global direta muda o resultado de todos os clientes ao mesmo tempo"]}
+};
+
+/* ===================== render ===================== */
+const defs=el("defs");
+const mk=el("marker",{id:"ah",viewBox:"0 0 10 10",refX:"9",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"});
+mk.appendChild(el("path",{d:"M0,0 L10,5 L0,10 z",fill:"var(--edge)"}));
+defs.appendChild(mk); svg.appendChild(defs);
+const gF=el("g"), gE=el("g"), gN=el("g"), gL=el("g");
+[gF,gE,gN,gL].forEach(x=>svg.appendChild(x));
+
+let CUR=null, CW=1520, CH=1000;
+function render(g){
+  CUR=g; [gF,gE,gN,gL].forEach(x=>{while(x.firstChild)x.removeChild(x.firstChild);});
+  CW=g.W; CH=g.maxB+70;
+  svg.setAttribute("viewBox","0 0 "+CW+" "+CH);
+  g.frames.forEach(f=>{
+    gF.appendChild(el("rect",{x:f.x,y:f.y,width:f.w,height:f.h,rx:16,class:"frm"}));
+    const t=el("text",{x:f.x+16,y:f.y+22,class:"frm-t"}); t.textContent=f.t; gF.appendChild(t);
+  });
+  g.subframes.forEach(f=>{
+    gF.appendChild(el("rect",{x:f.x,y:f.y,width:f.w,height:f.h,rx:12,class:"sub-frm"}));
+    const t=el("text",{x:f.x+12,y:f.y+18,class:"frm-t",style:"fill:var(--ai-br);font-size:12px"});
+    t.textContent=f.t; gF.appendChild(t);
+  });
+  g.E.forEach(e=>{
+    const pts=route(g,e);
+    gE.appendChild(el("path",{d:round(pts),class:"ed"+(e.o.dash?" dash":"")}));
+    if(e.label){
+      const i=Math.floor((pts.length-1)/2), p=pts[i], q=pts[i+1];
+      const t=el("text",{x:(p[0]+q[0])/2,y:(p[1]+q[1])/2+3.5,class:"el","text-anchor":"middle"});
+      t.textContent=e.label; gL.appendChild(t);
+      const bb=t.getBBox();
+      gL.insertBefore(el("rect",{x:bb.x-5,y:bb.y-2,width:bb.width+10,height:bb.height+4,rx:4,class:"elbg"}),t);
+    }
+  });
+  Object.keys(g.N).forEach(k=>{
+    const n=g.N[k];
+    const isMain=(g.id==="main"), doc=isMain&&DOC[n.id], sub=isMain&&SUBS[n.id];
+    const grp=el("g"); if(doc||sub) grp.setAttribute("data-node",n.id);
+    const fill="var(--"+n.tone+"-bg)", stroke="var(--"+n.tone+"-br)", ink="var(--"+n.tone+"-ink)";
+    if(n.kind==="diamond"){
+      grp.appendChild(el("polygon",{class:"hit",points:[[n.cx,n.y],[n.r,n.cy],[n.cx,n.b],[n.x,n.cy]].map(p=>p.join(",")).join(" "),fill:fill,stroke:stroke,"stroke-width":2}));
+      const t=el("text",{x:n.cx,y:n.cy-1,class:"dt","text-anchor":"middle",fill:ink}); t.textContent=n.t; grp.appendChild(t);
+      if(n.l[0]){const s=el("text",{x:n.cx,y:n.cy+14,class:"dl","text-anchor":"middle",fill:ink,opacity:.8}); s.textContent=n.l[0]; grp.appendChild(s);}
+    }else{
+      grp.appendChild(el("rect",{class:"hit",x:n.x,y:n.y,width:n.w,height:n.h,rx:11,fill:fill,stroke:stroke,
+        "stroke-width":n.tone==="ai"?2.2:1.8,"stroke-dasharray":n.spec?"7 4":"none"}));
+      const t=el("text",{x:n.x+14,y:n.y+26,class:"nt",fill:ink}); t.textContent=n.t; grp.appendChild(t);
+      n.l.forEach((L,i)=>{const s=el("text",{x:n.x+14,y:n.y+44+i*15,class:"nl",fill:ink,opacity:.85});s.textContent=L;grp.appendChild(s);});
+      if(sub){
+        grp.appendChild(el("rect",{x:n.r-31,y:n.y+8,width:23,height:23,rx:7,fill:"var(--surface)",stroke:stroke,"stroke-width":1.4}));
+        const p=el("text",{x:n.r-19.5,y:n.y+24.5,class:"badge","text-anchor":"middle",fill:stroke}); p.textContent="+"; grp.appendChild(p);
+      }else if(doc){
+        grp.appendChild(el("circle",{cx:n.r-19,cy:n.y+19,r:9,fill:"none",stroke:stroke,"stroke-width":1.2,opacity:.55}));
+        const p=el("text",{x:n.r-19,y:n.y+23.5,class:"dl","text-anchor":"middle",fill:stroke,opacity:.85}); p.textContent="i"; grp.appendChild(p);
+      }
+    }
+    gN.appendChild(grp);
+  });
+  fitAll();
+}
+
+/* ===================== navegação ===================== */
+const stage=document.getElementById("stage");
+let vb={x:0,y:0,w:1520,h:900};
+const apply=()=>svg.setAttribute("viewBox",vb.x+" "+vb.y+" "+vb.w+" "+vb.h);
+const aspect=()=>{const w=stage.clientWidth||900, h=stage.clientHeight||Math.round(w*0.72); return h/w;};
+function clamp(){
+  vb.x=Math.max(-220,Math.min(vb.x,CW+220-vb.w));
+  vb.y=Math.max(-120,Math.min(vb.y,CH+120-vb.h));
+}
+function fitAll(){
+  const W=CW+60; vb={x:-30,y:-30,w:W,h:W*aspect()}; clamp(); apply();
+}
+function focusRect(x,yy,w,h,pad){
+  pad=pad===undefined?26:pad;
+  const comfy=Math.min(CW+60,Math.max(560,stage.clientWidth*1.4));
+  const W=Math.max(Math.min(comfy,CW+60),380);
+  vb={x:x+w/2-W/2,y:yy-pad,w:W,h:W*aspect()}; clamp(); apply();
+}
+function zoom(k,cx,cy){
+  const nw=Math.max(300,Math.min(CW*1.6,vb.w*k)), nh=nw*aspect();
+  const rx=(cx-vb.x)/vb.w, ry=(cy-vb.y)/vb.h;
+  vb={x:cx-rx*nw,y:cy-ry*nh,w:nw,h:nh}; clamp(); apply();
+}
+document.getElementById("zin").onclick=()=>zoom(.75,vb.x+vb.w/2,vb.y+vb.h/2);
+document.getElementById("zout").onclick=()=>zoom(1.33,vb.x+vb.w/2,vb.y+vb.h/2);
+
+const MAIN=buildMain();
+const chips=document.getElementById("chips"), mapttl=document.getElementById("mapttl");
+function chipsMain(){
+  chips.innerHTML="";
+  MAIN.sections.forEach(s=>{
+    const b=document.createElement("button"); b.textContent=s.n;
+    b.onclick=()=>{
+      chips.querySelectorAll("button").forEach(x=>x.classList.remove("on")); b.classList.add("on");
+      if(!s.f) fitAll(); else focusRect(s.f.x,s.f.y,s.f.w,s.f.h);
+    };
+    chips.appendChild(b);
+  });
+  mapttl.innerHTML='PathSolutions · mapa de arquitetura <small>Azure Brazil South · multitenant</small>';
+}
+function chipsSub(g){
+  chips.innerHTML="";
+  const b=document.createElement("button"); b.className="back"; b.textContent="← mapa geral";
+  b.onclick=openMain; chips.appendChild(b);
+  const t=document.createElement("button"); t.textContent="ajustar à tela"; t.onclick=fitAll; chips.appendChild(t);
+  mapttl.innerHTML='detalhe · <small>'+g.title+'</small>';
+}
+function openMain(){
+  render(MAIN); chipsMain(); chips.children[0].classList.add("on");
+}
+function openSub(id){
+  const f=SUBS[id]; if(!f) return;
+  closePanel(); const g=f(); render(g); chipsSub(g);
+  if(stage.clientWidth<780) focusRect(0,0,CW,300);
+}
+
+const pts=new Map(); let last=null, pd=0, downAt=0, downPos=null, moved=false;
+stage.addEventListener("pointerdown",e=>{
+  stage.setPointerCapture(e.pointerId); pts.set(e.pointerId,[e.clientX,e.clientY]);
+  if(pts.size===1){last=[e.clientX,e.clientY];downAt=Date.now();downPos=[e.clientX,e.clientY];moved=false;stage.classList.add("drag");}
+});
+stage.addEventListener("pointermove",e=>{
+  if(!pts.has(e.pointerId))return;
+  pts.set(e.pointerId,[e.clientX,e.clientY]);
+  const a=[...pts.values()];
+  if(a.length>=2){
+    const d=Math.hypot(a[0][0]-a[1][0],a[0][1]-a[1][1]);
+    if(pd&&Math.abs(pd/d-1)>.005) zoom(pd/d,vb.x+vb.w/2,vb.y+vb.h/2);
+    pd=d; last=null; moved=true; return;
+  }
+  if(last){
+    if(downPos&&Math.hypot(e.clientX-downPos[0],e.clientY-downPos[1])>7) moved=true;
+    const f=vb.w/stage.clientWidth;
+    vb.x-=(e.clientX-last[0])*f; vb.y-=(e.clientY-last[1])*f; last=[e.clientX,e.clientY]; clamp(); apply();
+  }
+});
+function up(e){
+  const wasSingle=pts.size===1;
+  pts.delete(e.pointerId); if(pts.size<2)pd=0;
+  if(!pts.size){last=null;stage.classList.remove("drag");}
+  if(wasSingle&&!moved&&Date.now()-downAt<600){
+    const t=document.elementFromPoint(e.clientX,e.clientY);
+    const grp=t&&t.closest?t.closest("g[data-node]"):null;
+    if(grp) openPanel(grp.getAttribute("data-node"));
+  }
+}
+stage.addEventListener("pointerup",up); stage.addEventListener("pointercancel",up);
+stage.addEventListener("wheel",e=>{e.preventDefault();const f=vb.w/stage.clientWidth;
+  zoom(e.deltaY>0?1.12:.89, vb.x+e.offsetX*f, vb.y+e.offsetY*f);},{passive:false});
+window.addEventListener("resize",()=>{vb.h=vb.w*aspect();clamp();apply();});
+
+/* ===================== painel ===================== */
+const panel=document.getElementById("panel"), scrim=document.getElementById("scrim");
+const TONENAME={ctrl:"plano de controle",gpu:"GPU / offline",ai:"modelo",store:"armazenamento",al:"aprendizado",fail:"falha",ok:"sucesso",dec:"decisão"};
+function sec(title,items,cls){
+  if(!items||!items.length) return "";
+  const tag=cls==="how"?"ol":"ul";
+  return '<div class="sec '+(cls||"")+'"><h3>'+title+'</h3><'+tag+'><li>'+items.join("</li><li>")+"</li></"+tag+"></div>";
+}
+function openPanel(id){
+  const d=DOC[id], n=MAIN.N[id]; if(!d&&!SUBS[id]) return;
+  const tone=n?n.tone:"ctrl";
+  document.getElementById("ptitle").textContent=n?n.t:id;
+  document.getElementById("psub").textContent=(d&&d.s)||"";
+  let html="";
+  if(n&&n.spec) html+='<span class="tag" style="color:var(--al-br);border-color:var(--al-br)">proposta — fora do Mermaid</span>';
+  html+='<span class="tag" style="color:var(--'+tone+'-br);border-color:var(--'+tone+'-br)">'+TONENAME[tone]+'</span>';
+  if(d){
+    html+=sec("Como funciona",d.how,"how");
+    if(d.par&&d.par.length){
+      html+='<div class="sec"><h3>Parâmetros</h3><table class="ptab">'+
+        d.par.map(p=>"<tr><td>"+p[0]+"</td><td>"+p[1]+"</td></tr>").join("")+"</table></div>";
+    }
+    html+=sec("Recebe",d.de);
+    html+=sec("Entrega",d.para);
+    html+=sec("Onde quebra",d.fal,"fail");
+    html+=sec("Em aberto",d.abr,"open");
+  }
+  const body=document.getElementById("pbody");
+  body.innerHTML=html;
+  if(SUBS[id]){
+    const b=document.createElement("button"); b.id="pgo"; b.textContent="Abrir o detalhamento no mapa →";
+    b.onclick=()=>openSub(id); body.appendChild(b);
+  }
+  panel.classList.add("open"); scrim.classList.add("open");
+}
+function closePanel(){panel.classList.remove("open");scrim.classList.remove("open");}
+document.getElementById("pclose").onclick=closePanel;
+scrim.onclick=closePanel;
+document.addEventListener("keydown",e=>{
+  if(e.key==="Escape"){ if(panel.classList.contains("open")) closePanel(); else if(CUR&&CUR.id!=="main") openMain(); }
+});
+
+/* ===================== tema e início ===================== */
+const root=document.documentElement;
+try{const s=localStorage.getItem("ps-map-theme"); if(s) root.setAttribute("data-theme",s);}catch(err){}
+document.getElementById("theme").onclick=()=>{
+  const now=root.getAttribute("data-theme");
+  const next=now==="dark"?"light":now==="light"?"dark":(matchMedia("(prefers-color-scheme: dark)").matches?"light":"dark");
+  root.setAttribute("data-theme",next);
+  try{localStorage.setItem("ps-map-theme",next);}catch(err){}
+};
+openMain();
+if(stage.clientWidth<780){
+  const f=MAIN.sections[1].f; focusRect(f.x,f.y,f.w,f.h);
+  chips.querySelectorAll("button").forEach(x=>x.classList.remove("on"));
+  chips.children[1].classList.add("on");
+}
+setTimeout(()=>{const h=document.getElementById("hint"); if(h) h.style.opacity=0;},7000);
+</script>
+</body>
+</html>

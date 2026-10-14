@@ -1,0 +1,10 @@
+.env
+.env.*
+*.pem
+*.key
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+referencia-visual/
+backups/
