@@ -23,10 +23,10 @@ Tudo o mais é roadmap. Registre em `docs/v3/roadmap.md` e não construa. Isso i
 
 ## Decisões do Pedro
 
-- D1. Rótulos e anotações do legado (diagnóstico por lâmina, rótulos de QC, anotações de região, manifesto dos datasets): `<exportar antes de desligar | não exportar>`.
-- D2. Normalização de cor: sem Macenko, conforme a decisão de 22/09: `<confirmo | quero com Macenko>`.
-- D3. Teto mensal de gasto da subscrição, para os alertas de orçamento: `R$ <valor>`.
-- D4. Referência visual do legado: `<aproveitar | não aproveitar>`. Se aproveitar, o agente extrai os valores visuais do código e o Pedro tira as capturas de tela durante a Fase 1.
+- D1. Rótulos e anotações do legado: exportar antes de desligar.
+- D2. Normalização de cor: confirmo, sem Macenko.
+- D3. Teto mensal de gasto da subscrição: R$ 5000
+- D4. Referência visual do legado: aproveitar.
 
 D1 e D4 são necessárias antes da Fase 1, porque depois dela não há volta. D2 e D3, antes da Fase 2.
 
