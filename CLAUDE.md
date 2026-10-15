@@ -4,7 +4,7 @@ SaaS multitenant de pré-laudo assistido por IA em patologia digital. Dados de p
 
 ## Conta e recursos
 
-- Uma subscrição só: PATHSOLUTIONS TECNOLOGIA EM SAUDE LTDA, pay-as-you-go, sem créditos. ID: `<preenchido na Fase 0>`.
+- Uma subscrição só: PATHSOLUTIONS TECNOLOGIA EM SAUDE LTDA, pay-as-you-go, sem créditos. ID: `bd87a1ca-e4f5-460b-9f12-c89e114293f1`.
 - Antes de qualquer comando `az` ou `terraform`, confirme a subscrição ativa com `az account show`.
 - VM1, VM2, rede e a storage account das WSIs já existem. A v3 usa esses recursos, mas eles ficam fora do Terraform: entram só como `data source`. Nunca `terraform import`, nunca no state.
 - Recursos novos da v3 ficam no grupo `rg-pathsol-v3` e são criados só por Terraform.
