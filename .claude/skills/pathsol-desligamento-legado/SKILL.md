@@ -1,6 +1,6 @@
 ---
 name: pathsol-desligamento-legado
-description: Procedimento para desligar e limpar o sistema legado da PathSolutions nas VMs 1 e 2 antes da v3 — religar o banco se preciso, exportar rótulos e manifestos de datasets, extrair a referência visual, snapshots, parada e remoção de serviços, liberação de disco e desalocação da GPU — preservando as WSIs do Blob. Use sempre que um comando for mudar qualquer coisa no legado, para planejar ou executar o desligamento, ou num incidente antes dele.
+description: Procedimento para desligar e limpar o sistema legado da PathSolutions nas VMs 1 e 2 antes da v3 — proteger as WSIs do Blob (soft delete e lock), snapshots, religar o banco se preciso, conferir as SVS locais, tirar a VM2 do agendamento, listar órfãos, exportar rótulos e manifestos de datasets, extrair a referência visual, parada e remoção de serviços, liberação de disco e desalocação da GPU — preservando as WSIs do Blob. Use sempre que um comando for mudar qualquer coisa no legado, para planejar ou executar o desligamento, ou num incidente antes dele.
 ---
 
 # Desligamento do legado PathSolutions
@@ -23,11 +23,35 @@ Desligar o legado é rápido. O cuidado é com as poucas coisas que não voltam 
 
 ## Sequência
 
-0. **Banco no ar.** A exportação de rótulos precisa do Postgres funcionando. Se ele estiver fora por disco cheio, a única ação para religá-lo é `sudo docker builder prune -af` (apaga só cache de build). Acompanhe com `df -h` e `pg_isready`. Se não voltar em 10 minutos, pare e reporte. Nada mais é limpo antes do passo 5.
+A ordem dos passos 1 a 6 foi definida pelo Pedro depois da Fase 0. Os valores citados vêm de `docs/v3/00-ambiente.md`; confira o estado atual antes de cada ação.
 
-1. **Código.** Tag `legado-final-<AAAA-MM-DD>` em todos os repositórios do legado e push (pede confirmação). Registrar os hashes. O clone local fica onde está, só para consulta de fatos, até o go-live.
+1. **Proteger as WSIs.** Na `stpathsolutionsblob001`, ativar soft delete de blobs e de containers com 30 dias de retenção e criar um lock `CanNotDelete` na storage account. São duas ações, uma autorização cada:
+   ```
+   az storage account blob-service-properties update -g rg-prod-brsouth-001 -n stpathsolutionsblob001 \
+     --enable-delete-retention true --delete-retention-days 30 \
+     --enable-container-delete-retention true --container-delete-retention-days 30
+   az lock create --name nao-apagar-wsi --lock-type CanNotDelete -g rg-prod-brsouth-001 \
+     --resource stpathsolutionsblob001 --resource-type Microsoft.Storage/storageAccounts
+   ```
+   Conferir com `az storage account blob-service-properties show` e `az lock list -g rg-prod-brsouth-001`. Efeitos documentados pela Microsoft: o lock impede excluir a conta, mas não protege containers nem blobs, que ficam por conta do soft delete; o que for apagado ou sobrescrito continua cobrado como dado ativo durante a retenção; numa conta sem namespace hierárquico, como esta, o soft delete bloqueia o endpoint DFS (`*.dfs.core.windows.net`). A rede da conta não muda agora: isso vai para o plano da Fase 2.
 
-2. **Rótulos (se D1 = exportar).** Localize no banco todas as anotações humanas e exporte para `~/backup-legado/`:
+2. **Snapshots** de todos os discos das duas VMs, sistema e dados, antes de qualquer outra mudança, inclusive antes do `docker builder prune`. Incrementais (`az snapshot create --incremental true --source <id do disco>`): ficam em Standard HDD e são cobrados pelo espaço usado, com estimativa no relatório da Fase 0. Confirmar com `az snapshot list -o table` que existem e registrar nomes e tamanhos.
+
+3. **Banco no ar.** A exportação de rótulos precisa do Postgres funcionando. Na Fase 0, o `/data` da VM1 estava 100% cheio e o container `pathsolutions-db` em laço de recuperação (`PANIC ... No space left on device`).
+   - Parar primeiro os containers que escrevem cache, `pathsolutions-backend` e `pathsolutions-queue-worker`, deixando só o banco.
+   - Depois liberar espaço. Com o snapshot do disco de dados confirmado, o cache de tiles pode ser apagado, porque é regenerável. A Fase 0 achou dois: o diretório `/data/pathsolutions/tile_cache_dz` (156 GiB) e o volume Docker `pathsolutions_v2_tile-cache` (107,4 GB). O cache de build da VM1 estava em 0 B, então o `builder prune` sozinho não libera espaço lá.
+   - Acompanhar com `df -h` e `pg_isready`. Se o banco não voltar em 10 minutos, parar e reportar.
+   - Frontend e backend sobem só durante as capturas de tela (passo 9) e param logo depois.
+
+4. **SVS locais.** Os 17 `.svs` em `/mount/stpathsolutionsdata001`, no disco de SO da VM1: conferir por nome e tamanho se existem no container `wsi-slides`. O que não existir é copiado para lá antes de qualquer limpeza. Na Fase 0 os 17 tinham correspondente com o mesmo nome e tamanho; a conferência se repete aqui. No relatório, só contagens.
+
+5. **Agendamento da VM2.** Desativar o agendamento do runbook `TurnOn-VMs` (automation account `asa-prod-brsouth-001`; liga a VM1 e a VM2 de segunda a sexta às 06:00 de Brasília), ou tirar a VM2 dele, antes de desalocar a VM2.
+
+6. **Órfãos do `stpathsolutionsdata001`.** A conta não existe mais, mas sobraram o private endpoint `pe-stpathsolutionsdata001-file` (com a NIC dele) e a zona DNS privada `privatelink.file.core.windows.net` (com o link de VNet dela). Listar para exclusão, cada um com autorização separada.
+
+7. **Código.** Tag `legado-final-<AAAA-MM-DD>` em todos os repositórios do legado e push (pede confirmação). Registrar os hashes. O clone local fica onde está, só para consulta de fatos, até o go-live.
+
+8. **Rótulos (se D1 = exportar).** Localize no banco todas as anotações humanas e exporte para `~/backup-legado/`:
    - `rotulos_lamina.csv`, uma linha por rótulo: id interno da lâmina, caminho do blob da WSI, id interno do caso (a chave primária do banco, nunca o número real), laboratório, órgão, rótulo exatamente como está no banco, de onde veio (tabela e tela), quem rotulou, data. A coluna do caso e a do laboratório são o que permite separar o conjunto de teste por caso e por laboratório na v3.
    - `rotulos_qc.csv`: os rótulos de foco do admin (`admin_focus_label` ou equivalente), com id da lâmina, caminho do blob, rótulo, data.
    - `anotacoes_regiao.json`, se existirem: polígonos ou marcações de região, com coordenadas em pixels do nível 0 e o caminho do blob.
@@ -36,25 +60,23 @@ Desligar o legado é rápido. O cuidado é com as poucas coisas que não voltam 
 
    Confira as contagens com o banco. Copie a pasta para o container `backup-legado` na storage account existente (nunca dentro do container das WSIs) e confira os checksums.
 
-3. **Referência visual (se D4 = aproveitar).** Duas partes:
+9. **Referência visual (se D4 = aproveitar).** Duas partes:
    - Você extrai do código os valores visuais: cores (com nome e uso), fontes, tamanhos, espaçamentos, raios, ícones, temas. Também a lista de telas e rotas, o que cada uma faz, e os atalhos de teclado e interações do viewer. Tudo como lista de valores em `docs/v3/referencia-visual.md`, sem copiar CSS nem componentes.
    - O Pedro tira as capturas de tela no navegador, porque as telas mostram dado de paciente e só ele pode escolher um caso ou cortar a imagem. Gere a lista de telas a capturar. Ele salva as imagens em `referencia-visual/`, na raiz do repositório da v3 (fora do git). Quando ele avisar, abra cada imagem e descreva o layout de cada tela no mesmo documento. Se alguma imagem mostrar nome, CPF ou número de caso, avise o Pedro e não a use.
 
-   Se o sistema não subir, registre "capturas não feitas" e siga só com os valores extraídos do código.
+   Frontend e backend sobem só para as capturas e param logo depois (passo 3). Se o sistema não subir, registre "capturas não feitas" e siga só com os valores extraídos do código.
 
-4. **Snapshots** de todos os discos das duas VMs, sistema e dados. Confirmar com `az snapshot list -o table` que existem e registrar nomes e tamanhos.
+10. **Parar e remover serviços**, nesta ordem: crons e agendadores, worker da VM2, backend e frontend, banco. Remover containers, imagens e volumes Docker do legado, units do systemd e entradas de crontab. Estado final: nada do legado rodando nas duas VMs.
 
-5. **Parar e remover serviços**, nesta ordem: crons e agendadores, worker da VM2, backend e frontend, banco. Remover containers, imagens e volumes Docker do legado, units do systemd e entradas de crontab. Estado final: nada do legado rodando nas duas VMs.
+11. **Liberar disco.** Só depois dos passos 2, 4 e 8 confirmados: apagar os diretórios do legado em `/data` nas duas VMs, inclusive os datasets em `/data/wsi_stage/datasets`. Os datasets públicos podem ser baixados de novo pelo manifesto. Mostrar `df -h` antes e depois.
 
-6. **Liberar disco.** Só depois dos passos 2 e 4 confirmados: apagar os diretórios do legado em `/data` nas duas VMs, inclusive os datasets em `/data/wsi_stage/datasets`. Os datasets públicos podem ser baixados de novo pelo manifesto. Mostrar `df -h` antes e depois.
+12. **VM2.** Manter driver NVIDIA e CUDA instalados, com as versões registradas. Depois da limpeza e do passo 5, desalocar a VM2 até a Fase 4.
 
-7. **VM2.** Manter driver NVIDIA e CUDA instalados, com as versões registradas. Depois da limpeza, desalocar a VM2 até a Fase 4.
-
-8. **Extensão Chrome.** Registrar que o Pedro pediu aos usuários da Diagnose para desativá-la.
+13. **Extensão Chrome.** Registrar que o Pedro pediu aos usuários da Diagnose para desativá-la.
 
 ## Relatório
 
-Estado das duas VMs, espaço livre em cada disco, snapshots com nome e tamanho, contagens das exportações por órgão e classe, onde estão as cópias, o que foi removido e o que ficou. Como voltar atrás: criar discos a partir dos snapshots e trocar na VM, mais a tag do código.
+Estado das duas VMs, espaço livre em cada disco, proteção das WSIs (soft delete e lock), snapshots com nome e tamanho, conferência dos SVS locais (só contagens), estado do agendamento `TurnOn-VMs`, órfãos listados, contagens das exportações por órgão e classe, onde estão as cópias, o que foi removido e o que ficou. Como voltar atrás: criar discos a partir dos snapshots e trocar na VM, mais a tag do código.
 
 ## Incidente antes do desligamento
 
