@@ -34,3 +34,32 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
 ## Passo 2: valores visuais
 
 - 20:48:46 UTC: `docs/v3/referencia-visual.md` gravado (1.395 linhas, 12 seções), extraído só por leitura do código do legado (frontend e extensões), sem capturas e sem copiar CSS nem componentes; varredura sem CPF nem e-mail.
+
+## Passo 3: storage account do legado
+
+- 20:49:33 UTC: pedido ao Pedro para apagar a `stpathsolutionsblob001` pelo Portal (aguardando).
+
+## Passo 4: parar e remover o legado (VM2 primeiro)
+
+- 20:49:33 UTC: VM2, leitura da unit `hibou-inference.service` (só ExecStart/ExecStop/Restart/WorkingDirectory/User/Type) e da política de reinício dos containers.
+  - Resultado: unit `Type=simple`, `ExecStart=docker compose -f docker-compose.gpu.yml up --no-build --remove-orphans`, `ExecStop=... down`, `Restart=on-failure`, sem drop-ins. Containers: 4 `unless-stopped` em execução e 3 `no` parados.
+- 21:21:43 UTC: VM2, `sudo systemctl disable --now hibou-inference.service`.
+  - Resultado: unit inactive/disabled; o `compose down` removeu os 4 containers ativos; restaram os 3 parados.
+- 21:22:07 UTC: VM2, `docker rm hiesd_aug gchtid_aug pg_extract`.
+  - Resultado: 0 containers na VM2.
+- 21:22:28 UTC: VM2, `docker image prune -af` e `docker builder prune -af`.
+  - Resultado: 0 imagens e 0 de cache de build; `/data` da VM2 de 224G (94%) para 181G (76%).
+- 22:13:27 UTC: VM2, remoção de `/etc/systemd/system/hibou-inference.service`, `systemctl daemon-reload` e `systemctl reset-failed hibou-inference.service`.
+  - Resultado: **não executado**. A VM2 foi desalocada pelo auto-shutdown das 19:00 de Brasília (deallocate de 22:01:26 a 22:01:38 UTC, aplicativo do Azure Lab Services) enquanto a ação aguardava confirmação; o ssh respondeu `No route to host`. Nada rodou na VM2 depois da ação anterior.
+- 22:14 UTC: conferência do passo 3: a `stpathsolutionsblob001` ainda existe. A exclusão pelo Pedro está pendente.
+
+## Interrupção em 15/10/2026
+
+- 23:01:14 UTC: a VM1 foi desalocada pelo auto-shutdown das 20:00 de Brasília. A sessão caiu antes deste registro e do push. Nada além do registrado acima foi executado.
+- 23:04:43 UTC: a VM1 foi ligada pelo Portal, por usuário.
+- 23:07 UTC: retomada. A VM2 continua desalocada, e a `stpathsolutionsblob001` ainda existe.
+- Situação dos passos:
+  - concluídos: 0, Codex, 1 (falta o Pedro revogar o token) e 2;
+  - pendente com o Pedro: passo 3;
+  - passo 4 na VM2 parcial: falta remover o arquivo da unit e o `aznfs`;
+  - passo 4 na VM1 e passos 5, 6 e 7: não iniciados.
