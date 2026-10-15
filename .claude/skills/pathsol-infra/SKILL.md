@@ -1,6 +1,6 @@
 ---
 name: pathsol-infra
-description: Convenções e procedimento para infraestrutura Azure da PathSolutions v3 na subscrição pay-as-you-go (VM1 e VM2 reaproveitadas, recursos novos em Terraform). Use sempre que for escrever .tf, rodar terraform plan/apply, consultar cota ou custo, criar storage, fila, Key Vault, Postgres, alertas, preparar as VMs ou configurar ligar/desligar a GPU, mesmo que o pedido pareça pequeno.
+description: Convenções e procedimento para infraestrutura Azure da PathSolutions v3 na subscrição CSP (Microsoft Azure Plan via parceiro; VM1 e VM2 reaproveitadas, recursos novos em Terraform). Use sempre que for escrever .tf, rodar terraform plan/apply, consultar cota ou custo, criar storage, fila, Key Vault, Postgres, alertas, preparar as VMs ou configurar ligar/desligar a GPU, mesmo que o pedido pareça pequeno.
 ---
 
 # Infraestrutura PathSolutions v3
@@ -13,7 +13,7 @@ Complementa as skills oficiais de Azure e Terraform instaladas por plugin. Estas
 
 ## O que é de quem
 
-- **Existentes, fora do Terraform:** VM1, VM2, os discos delas, a rede e a storage account do legado. A v3 usa esses recursos, mas o Terraform só os lê como `data source`. Nunca `terraform import`. Um plano que cite qualquer um deles como create, update ou destroy está errado: pare e reporte.
+- **Existentes, fora do Terraform:** VM1, VM2, os discos delas e a rede. A v3 usa esses recursos, mas o Terraform só os lê como `data source`. A storage account do legado (`stpathsolutionsblob001`) é apagada pelo Pedro na Fase 1 e não entra no Terraform. Nunca `terraform import`. Um plano que cite qualquer um deles como create, update ou destroy está errado: pare e reporte.
 - **Novos, no Terraform:** tudo da v3 fica em `rg-pathsol-v3`.
 - Mudança em VM existente (disco novo, tamanho, auto-shutdown) é feita com `az`, uma ação por autorização, registrada em `docs/operacao/`.
 
@@ -26,6 +26,7 @@ Complementa as skills oficiais de Azure e Terraform instaladas por plugin. Estas
 - Versões de provider fixadas.
 - Segredos no Key Vault. Preferir identidade gerenciada a chaves de acesso.
 - Postgres com SSL obrigatório, sem acesso público aberto, backup automático e restauração testada pelo menos uma vez.
+- Storage da v3: nasce sem soft delete (decisão do Pedro). Ele é ligado no MVP, quando o Pedro confirmar que as lâminas e os casos corretos estão carregados, por Terraform e com plano aprovado.
 
 ## Procedimento
 
@@ -40,6 +41,7 @@ Plano que destrói ou recria recurso com dado (storage, Postgres, Key Vault) apa
 
 ## Custo (sem créditos, cada real sai do caixa)
 
+- A subscrição é CSP: o Cost Management mostra preço de tabela em BRL, e a fatura do parceiro pode ser diferente.
 - O primeiro recurso depois do estado é o orçamento da subscrição, com alertas em 50%, 80% e 100% do teto D3 do prompt, enviados ao e-mail do Pedro.
 - Todo recurso novo entra no plano com custo mensal estimado e a fonte da estimativa (calculadora ou página de preços do Azure). Sem número inventado.
 - Preferir reaproveitar o que já existe a criar recurso novo.
@@ -53,4 +55,4 @@ Plano que destrói ou recria recurso com dado (storage, Postgres, Key Vault) apa
 
 ## Cota
 
-Consulte com `az vm list-usage --location brazilsouth -o table` e reporte. Pedido de cota é feito pelo Pedro no portal.
+Consulte com `az vm list-usage --location brazilsouth -o table` e reporte. Pedido de cota é feito pelo Pedro. Numa subscrição CSP, se o caminho é o portal ou o parceiro não foi verificado na Fase 0.

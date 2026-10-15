@@ -5,7 +5,7 @@
 - `PROMPT_V3.md` — a missão. Cada sessão executa a fase indicada e para.
 - `CLAUDE.md` — regras permanentes. O Claude Code carrega sozinho em toda sessão aberta nesta pasta.
 - `.claude/skills/` — 4 skills do projeto, carregadas sob demanda:
-  - `pathsol-desligamento-legado` — desligar e limpar o sistema atual, preservando as WSIs do Blob.
+  - `pathsol-desligamento-legado` — desligar e apagar o sistema atual inteiro (lâminas, banco, caches e dumps), sem snapshots. A storage account do legado é apagada pelo Pedro, pelo Portal. Ficam só o código, no GitHub com tag, e os valores visuais em `docs/v3/referencia-visual.md`.
   - `pathsol-infra` — Terraform para recursos novos, VMs reaproveitadas, custo e disco.
   - `pathsol-contrato-h5` — o arquivo `.h5`, a fila e os testes de aceite do worker.
   - `pathsol-isolamento-tenant` — JWT, RLS, SAS e LGPD.

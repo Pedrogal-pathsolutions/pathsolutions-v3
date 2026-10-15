@@ -36,7 +36,7 @@ A API compara o `extractor_version` do `.h5` com a versão ativa. Se diferir, ma
 
 ## Testes de aceite (gate da Fase 5)
 
-Rodar em lâminas escolhidas com o Pedro: pelo menos dois órgãos e uma lâmina difícil.
+Rodar em lâminas escolhidas com o Pedro, com a origem e o envio ao storage da v3 definidos no plano aprovado da Fase 2: pelo menos dois órgãos e uma lâmina difícil.
 
 1. **Reprodutibilidade:** processar a mesma lâmina duas vezes dá o mesmo conjunto de patches aceitos e similaridade de cosseno por patch com média ≥ 0,999.
 2. **Idempotência:** reentregar a mesma mensagem não cria segundo `.h5` nem segundo registro.

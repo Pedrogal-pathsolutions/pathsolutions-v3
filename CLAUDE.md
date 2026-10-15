@@ -4,19 +4,26 @@ SaaS multitenant de pré-laudo assistido por IA em patologia digital. Dados de p
 
 ## Conta e recursos
 
-- Uma subscrição só: PATHSOLUTIONS TECNOLOGIA EM SAUDE LTDA, pay-as-you-go, sem créditos. ID: `bd87a1ca-e4f5-460b-9f12-c89e114293f1`.
+- Uma subscrição só: PATHSOLUTIONS TECNOLOGIA EM SAUDE LTDA, contratada via parceiro CSP (Microsoft Azure Plan, cobrança por uso), sem créditos. ID: `bd87a1ca-e4f5-460b-9f12-c89e114293f1`. O Cost Management mostra preço de tabela; a fatura do parceiro pode ser diferente.
 - Antes de qualquer comando `az` ou `terraform`, confirme a subscrição ativa com `az account show`.
-- VM1, VM2, rede e a storage account das WSIs já existem. A v3 usa esses recursos, mas eles ficam fora do Terraform: entram só como `data source`. Nunca `terraform import`, nunca no state.
+- VM1, VM2 e a rede já existem. A v3 usa esses recursos, mas eles ficam fora do Terraform: entram só como `data source`. Nunca `terraform import`, nunca no state.
+- A storage account do legado (`stpathsolutionsblob001`) é apagada inteira pelo Pedro, pelo Portal, na Fase 1. O storage da v3 é novo, criado por Terraform.
 - Recursos novos da v3 ficam no grupo `rg-pathsol-v3` e são criados só por Terraform.
 - Tudo custa dinheiro: nenhum recurso novo sem custo mensal estimado no plano aprovado.
 
 ## Legado
 
-- A v3 é escrita do zero. Nenhum código, comentário, configuração ou arquivo do legado é copiado para cá. As únicas coisas que vêm do legado são dados: as exportações de rótulos no container `backup-legado` e a referência visual (lista de valores em `docs/v3/referencia-visual.md` e capturas em `referencia-visual/`).
+- A v3 é escrita do zero. Nenhum código, comentário, configuração ou arquivo do legado é copiado para cá. A única coisa que vem do legado é a lista de valores visuais em `docs/v3/referencia-visual.md`, extraída do código na Fase 1, sem capturas de tela.
+- Nenhum dado do legado (rótulos, lâminas, banco, caches, dumps) é exportado: o legado inteiro é apagado na Fase 1, e a v3 começa vazia. Lâminas e casos de treinamento chegam pelo fluxo novo.
 - O legado pode ser lido apenas para extrair fatos (onde estão as WSIs, como a API do PathoWeb responde, versões do driver da GPU). Os fatos são registrados com palavras próprias.
-- Antes da Fase 1, o legado é somente leitura. A Fase 1 desliga e limpa o legado seguindo a skill `pathsol-desligamento-legado`, uma ação por autorização do Pedro.
-- As WSIs no Blob nunca são apagadas, movidas ou alteradas. São a única cópia e a entrada do reprocessamento.
-- Os snapshots do legado só são apagados depois do go-live, com pedido escrito do Pedro.
+- Antes da Fase 1, o legado é somente leitura. A Fase 1 desliga e apaga o legado seguindo a skill `pathsol-desligamento-legado`, uma ação por autorização do Pedro.
+- O desligamento não faz snapshots (decisão do Pedro em 15/10/2026): o que a Fase 1 apaga não tem volta, exceto o código, guardado no GitHub com tag.
+
+## Storage da v3
+
+- As WSIs no storage da v3 nunca são apagadas, movidas ou alteradas.
+- O soft delete do storage da v3 é ligado no MVP, quando as lâminas e os casos corretos estiverem carregados (decisão do Pedro).
+- Você nunca apaga blobs, containers ou storage accounts, nem os do legado. As travas do `.claude/settings.json` continuam valendo.
 
 ## Gates
 
