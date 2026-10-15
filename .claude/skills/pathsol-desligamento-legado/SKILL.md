@@ -19,11 +19,16 @@ Os fatos citados abaixo vêm de `docs/v3/00-ambiente.md`. As exceções são o `
 - Você nunca apaga blobs, containers do Blob ou storage accounts (travas do `.claude/settings.json`). A remoção de containers Docker no passo 4 não entra nesta regra. A `stpathsolutionsblob001` é apagada pelo Pedro, pelo Portal.
 - Código, comentários e arquivos de configuração do legado não são copiados para o repositório da v3. A exceção é a lista de valores visuais do passo 2.
 - Nenhum dado de paciente em registro, relatório ou commit. Nomes de arquivo de lâmina e de diretório por caso podem conter número de caso: relatórios trazem só contagens.
-- Nunca tocar: o repositório da v3 (`/home/azureps/pathsolutions-v3`), `~/.claude`, `~/.azure`, `~/.ssh`, `~/.codex` e a conta `paths`. Também ficam Docker e a configuração dele em `/etc/docker`, driver NVIDIA e nvidia-container-toolkit.
+- Nunca tocar: o repositório da v3 (`/home/azureps/pathsolutions-v3`), `~/.claude`, `~/.azure`, `~/.ssh`, `~/.codex`, a conta `paths` e o `pathsolutions-claude-context` (repositório e pasta local). Também ficam Docker e a configuração dele em `/etc/docker`, driver NVIDIA e nvidia-container-toolkit.
 
 ## Antes de começar
 
-Parar os processos Codex na VM1 (decisão do Pedro em 15/10). Durante as fases, nenhum outro agente usa a VM1.
+0. **Repositório da v3 no GitHub**, antes de qualquer outro passo (decisão do Pedro em 15/10):
+   - gerar na VM1 uma chave SSH só para o repositório `Pedrogal-pathsolutions/pathsolutions-v3` (privado) e mostrar a chave pública ao Pedro, que a cadastra como deploy key com escrita;
+   - configurar o remoto por SSH, fazer o push da `main` e conferir por hash;
+   - daqui em diante, fazer push ao fim de cada sessão (`CLAUDE.md`).
+
+Depois, parar os processos Codex na VM1. Eles são do Pedro, e ele autorizou parar. O Reynaldo confirmou que não tem sessões nem trabalho pendente na VM1. Durante as fases, nenhum outro agente usa a VM1.
 
 ## Sequência
 
@@ -47,7 +52,7 @@ Parar os processos Codex na VM1 (decisão do Pedro em 15/10). Durante as fases, 
 
      Se alguma das duas falhar, parar e levar ao Pedro, com a proposta de enviar com outro nome (`legado-final/<ramo>`) os ramos que têm commits sem cópia. Registrar os hashes.
    - Depois do push e da conferência, o Pedro revoga o token do GitHub; o `~/.git-credentials` sai no passo 5.
-   - **Pendente:** de quem é a conta do `pathsolutions-claude-context` (`/home/azureps/pathsolutions-claude-context`, com remoto em outra conta do GitHub). A resposta 6 de 15/10 veio com o campo `<de quem>` sem preenchimento. Até a resposta, esse repositório não recebe tag, push nem exclusão.
+   - **`pathsolutions-claude-context`:** o Pedro não sabe de quem é a conta. Não tocar nele nem na pasta local `/home/azureps/pathsolutions-claude-context` (decisão de 15/10).
 
 2. **Valores visuais.** Antes do passo 5, que apaga o código local, extrair do código do legado:
    - cores (com nome e uso), fontes, tamanhos, espaçamentos, raios, ícones e temas;
@@ -68,10 +73,8 @@ Parar os processos Codex na VM1 (decisão do Pedro em 15/10). Durante as fases, 
      - tirar do crontab do `azureps` a entrada `@reboot` do script de backup.
    - **nginx e certbot (VM1):** o site `pathsolutions` do nginx nativo e o certbot servem o legado em 80/443, abertas para a Internet. O site está em `/etc/nginx/sites-enabled`, visto em 15/10; o nome não consta do relatório da Fase 0.
      - Se o site ficar, ele segue encaminhando essas portas para 127.0.0.1:3000 e :8000. Sem os containers, deve responder com erro (provavelmente 502, não verificado), e o que vier a escutar nessas portas na VM1 ficaria exposto por ele.
-     - Levar ao Pedro como ações separadas, uma autorização cada:
-       - desativar o site e recarregar o nginx, ou parar e desabilitar o nginx;
-       - remover o certificado do domínio do legado e a renovação dele no certbot, ou mantê-los;
-       - apagar os logs em `/var/log/nginx`, que podem conter número de caso (seção 14 e risco 4 da Fase 0). Em 15/10 havia 2 atuais e 28 rotacionados. O logrotate guarda 14 dias e não gira log vazio (`notifempty`); com o nginx sem tráfego, os rotacionados não saem sozinhos (inferência pela configuração).
+     - Decisão do Pedro em 15/10: parar e desativar o `nginx.service` e o `certbot.timer`, sem desinstalar. Configuração, certificado e pacotes ficam; a Fase 2 decide.
+     - Os logs em `/var/log/nginx` podem conter número de caso (seção 14 e risco 4 da Fase 0) e ficam até decisão do Pedro. Em 15/10 havia 2 atuais e 28 rotacionados.
    - **VM2**, nesta ordem:
      - antes, só leitura: `systemctl cat hibou-inference.service` (ExecStart, ExecStop, Restart, WorkingDirectory e drop-ins) e a política de reinício dos containers (`docker inspect`, `HostConfig.RestartPolicy`). A Fase 0 não registrou nenhum dos dois. No registro vão só esses campos, sem segredos;
      - `systemctl disable --now hibou-inference.service`, antes dos containers, para que a unit não os recrie;
@@ -79,8 +82,9 @@ Parar os processos Codex na VM1 (decisão do Pedro em 15/10). Durante as fases, 
      - remover as imagens (inclusive as tags de backup e de rollback) e o cache de build;
      - remover o arquivo da unit (e os drop-ins, se houver) de `/etc/systemd/system` e rodar `systemctl daemon-reload` e `systemctl reset-failed hibou-inference.service`.
    - **aznfs (VM1 e VM2):** as units `aznfswatchdog` e `aznfswatchdogv4` vêm do pacote `aznfs`, o helper de NFS do Azure. O script de setup do legado instala esse pacote para as montagens NFS da `stpathsolutionsdata001`, conta já excluída, e nenhuma das duas VMs tem montagem NFS.
-     - Conferir o pacote e as units nas duas VMs e confirmar com o Pedro se saem.
-     - Se saírem, mostrar antes o que o `apt-get -s remove aznfs` removeria e só então rodar `apt remove aznfs`, sem `autoremove`.
+     - Decisão do Pedro em 15/10: remover o `aznfs`, junto com a entrada de montagem.
+     - Mostrar antes o que o `apt-get -s remove aznfs` removeria e só então rodar `apt remove aznfs`, sem `autoremove`.
+     - Conferir e remover qualquer entrada de montagem NFS do legado no `/etc/fstab` e em units `.mount` ou `.automount`. Em 15/10 o `/etc/fstab` das duas VMs não tinha nenhuma; registrar se continua assim.
    - **Estado final nas duas VMs:** `docker ps -a`, `docker image ls` e `docker volume ls` vazios, nenhuma unit do legado e nenhum crontab do legado.
 
 5. **Apagar os dados do legado.** Só depois dos passos 1 a 4 confirmados.

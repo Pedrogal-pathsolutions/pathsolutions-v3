@@ -34,7 +34,12 @@ Blob sem ponteiro é ignorado por todos os leitores. Reentrega de um `job_id` qu
 
 A API compara o `extractor_version` do `.h5` com a versão ativa. Se diferir, marca a lâmina para reprocessamento e não roda inferência.
 
-## Testes de aceite (gate da Fase 5)
+## Testes de aceite
+
+Gates (decisão do Pedro em 15/10/2026):
+- a Fase 4 fecha com os testes 1 a 5 e 8, mais uma conferência simples do 6: a grade de patches desenhada sobre a miniatura da lâmina, num PNG que o Pedro olha;
+- o teste 7 fecha na Fase 5;
+- o teste 6 completo, no viewer, fecha na Fase 6.
 
 Rodar em lâminas escolhidas com o Pedro, com a origem e o envio ao storage da v3 definidos no plano aprovado da Fase 2: pelo menos dois órgãos e uma lâmina difícil.
 
@@ -47,4 +52,4 @@ Rodar em lâminas escolhidas com o Pedro, com a origem e o envio ao storage da v
 7. **Versão:** um `.h5` com `extractor_version` diferente é recusado na inferência e marcado para reprocessar.
 8. **Disco:** depois de processar todas as lâminas de teste, o disco do worker volta ao tamanho inicial.
 
-Registre os resultados em `docs/v3/aceite-worker.md`. Falha em qualquer item bloqueia a fase e exige diagnóstico antes de correção.
+Registre os resultados em `docs/v3/aceite-worker.md`. Falha em qualquer item bloqueia a fase em que ele fecha e exige diagnóstico antes de correção.

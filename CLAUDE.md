@@ -66,6 +66,11 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 - `terraform plan` salvo e resumido antes de todo `apply`; `apply` só com aprovação.
 - Nunca `terraform destroy` nem exclusão de recurso Azure sem pedido explícito.
 
+## Repositório
+
+- Remoto: `git@github.com:Pedrogal-pathsolutions/pathsolutions-v3.git` (privado), por SSH, com uma deploy key de escrita só para este repositório, gerada na VM1.
+- Ao fim de cada sessão: commit do que ficou pronto, push da `main` e conferência por hash (o hash local da `main` igual ao do remoto).
+
 ## Idioma
 
 Relatórios e documentação em português do Brasil. Código, identificadores e comentários de código em inglês.

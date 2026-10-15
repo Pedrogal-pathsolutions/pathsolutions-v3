@@ -95,15 +95,15 @@ Use a skill `pathsol-infra`. Terraform para os recursos novos: estado remoto, or
 
 ### Fase 4 — Worker GPU e acervo `.h5`
 
-Use a skill `pathsol-contrato-h5`. Primeira fatia: mensagem na fila → worker na VM2 → `.h5` → COMPLETED. Os testes de aceite da skill são o gate. O acervo `.h5` nasce dos envios pelo fluxo novo (critério 8).
+Use a skill `pathsol-contrato-h5`. Primeira fatia: mensagem na fila → worker na VM2 → `.h5` → COMPLETED. O gate são os testes de aceite 1 a 5 e 8 da skill, mais uma conferência simples do 6: a grade de patches desenhada sobre a miniatura da lâmina, num PNG que o Pedro olha. O acervo `.h5` nasce dos envios pelo fluxo novo (critério 8).
 
 ### Fase 5 — API, banco e roteador
 
-Use as skills `pathsol-isolamento-tenant` e `pathsol-contrato-h5`. Toda rota nova com os quatro testes de isolamento.
+Use as skills `pathsol-isolamento-tenant` e `pathsol-contrato-h5`. Toda rota nova com os quatro testes de isolamento. O teste de aceite 7 da `pathsol-contrato-h5` (versão do extrator) entra no gate desta fase.
 
 ### Fase 6 — Workspace e extensão
 
-Workspace e extensão escritos do zero. Antes de começar, leia `docs/v3/referencia-visual.md`, com os valores visuais extraídos do código do legado na Fase 1 (não há capturas de tela). Reproduza as cores, a tipografia, as telas, os fluxos e os atalhos com código novo. Melhorias visuais vão para o roadmap, não para a v1. A integração com o PathoWeb falha fechada: sem resposta da API, nada é gravado no LIS.
+Workspace e extensão escritos do zero. Antes de começar, leia `docs/v3/referencia-visual.md`, com os valores visuais extraídos do código do legado na Fase 1 (não há capturas de tela). Reproduza as cores, a tipografia, as telas, os fluxos e os atalhos com código novo. Melhorias visuais vão para o roadmap, não para a v1. A integração com o PathoWeb falha fechada: sem resposta da API, nada é gravado no LIS. O teste de aceite 6 completo da `pathsol-contrato-h5` (alinhamento no viewer) entra no gate desta fase.
 
 ### Fase 7 — Cabeças ABMIL
 
