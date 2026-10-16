@@ -93,3 +93,8 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
   - Resultado: rascunho aceito (HTTP 202), idêntico ao arquivo novo, e publicado às 23:31:10 UTC (`Published`). O conteúdo publicado, lido de novo, é idêntico byte a byte ao arquivo novo: a lista `$VMs` só tem a VM1. Fica pendente a conferência no job de 16/10, às 06:00 BRT.
 - 16/10, 00:01:12 UTC: `az vm deallocate -g rg-prod-brsouth-001 -n vm-appfoundation-prod-001`.
   - Resultado: `VM deallocated` às 00:01:49 UTC. Passo 7 concluído na VM2, faltando conferir no job de 16/10, às 06:00 BRT, que só a VM1 foi ligada. A VM2 fica desalocada até a Fase 4. Daqui em diante, os horários são de 16/10/2026.
+
+## Retomada em 16/10/2026
+
+- 16/10, 09:01 UTC: a VM1 religou pelo runbook. A sessão de 15/10 caiu durante uma leitura (inspeção dos volumes Docker da VM1), sem nenhuma ação em andamento.
+- 16/10, 19:58 UTC: conferência do passo 7. O job `TurnOn-VMs` das 09:00:54 UTC terminou `Completed` e, no activity log das últimas 12 h, só aparece o start da VM1. A VM2 segue `VM deallocated`. Passo 7 concluído.
