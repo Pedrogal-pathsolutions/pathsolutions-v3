@@ -63,3 +63,33 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
   - pendente com o Pedro: passo 3;
   - passo 4 na VM2 parcial: falta remover o arquivo da unit e o `aznfs`;
   - passo 4 na VM1 e passos 5, 6 e 7: não iniciados.
+- 23:09:53 UTC: `az vm start` da VM2, para terminar nela os passos 4 e 5 antes de tirá-la do runbook (passo 7); retomada prevista na skill.
+  - Resultado: VM2 `VM running` às 23:11:42 UTC.
+- 23:11:58 UTC: VM2, remoção de `/etc/systemd/system/hibou-inference.service`, `systemctl daemon-reload` e `systemctl reset-failed hibou-inference.service` (retomada da ação que não rodou às 22:13).
+  - Resultado: arquivo da unit removido; 0 arquivos de unit `hibou-inference`; 0 units em falha. Antes da remoção, a unit estava inactive/disabled, com 0 containers e 0 imagens depois da partida.
+- 23:12:17 UTC: VM2, simulação `apt-get -s remove aznfs` e busca de entradas de montagem NFS (`/etc/fstab`, units `.mount`/`.automount`).
+  - Resultado: a simulação remove só o `aznfs` 3.0.15. Não há entrada NFS no `/etc/fstab`, nem unit `.mount`/`.automount`, nem montagem NFS ativa: não existe entrada de montagem para remover na VM2.
+- 23:12:38 UTC: VM2, `sudo apt-get remove -y aznfs` (sem autoremove).
+  - Resultado: `aznfs` removido (status `deinstall ok config-files`, sem purge); 0 units `aznfswatchdog`. Passo 4 na VM2 concluído: 0 containers, 0 imagens, 0 volumes, nenhuma unit nem crontab do legado.
+
+## Passo 5: apagar os dados do legado (VM2 primeiro)
+
+- 23:13:09 UTC: VM2, registro do estado do Docker e do containerd antes de apagar o `/data` (só leitura).
+  - Resultado: Docker com raiz `/data/docker` (`daemon.json`), driver overlayfs, runtime padrão `nvidia`; containerd com `root = "/data/containerd"` no `config.toml` (caminho, não link); `/var/lib/docker` não existe; só `/dev/sda` montado em `/data`; 181G e 138.966 inodes usados (maiores: cyto 79G, wsi_stage 67G, hiesd 34G).
+- 23:14:07 UTC: VM2, parar docker.socket/docker.service/containerd.service, `find /data -xdev -mindepth 1 -delete`, religar e conferir o `docker info`.
+  - Resultado: `/data` da VM2 de 181G para 316K (0 itens antes de religar; o Docker recriou a raiz). docker e containerd ativos; `docker info`: raiz `/data/docker`, overlayfs, runtimes `io.containerd.runc.v2`, `nvidia` e `runc`, padrão `nvidia`.
+- 23:14:22 UTC: VM2, `rm -rf /home/azureps/inference` (com o `.env`).
+  - Resultado: `~/inference` removido (6,6 MB, 49 arquivos). Disco de SO da VM2 em 69%. Passos 4 e 5 concluídos na VM2.
+
+## Passo 7: VM2 fora do runbook e desalocada (antecipado, porque só depende da VM2)
+
+- 23:14:45 UTC: leitura do conteúdo publicado do runbook `TurnOn-VMs` (só leitura).
+  - Resultado: a primeira tentativa não rodou, porque a pasta temporária da sessão sumiu no reinício da VM1; refeita em seguida. Runbook `PowerShell72`, `Published`, sem rascunho em edição, última edição em 16/06/2026. O script entra com a identidade gerenciada e liga com `Start-AzVM -NoWait` cada VM da lista fixa `$VMs` (linha 8), que tem a VM1 e a VM2. A agenda `TurnOn-VMs` não passa parâmetros: segunda a sexta, 06:00 `America/Sao_Paulo`, com a próxima execução em 16/10/2026 às 06:00 BRT. Arquivo em UTF-8 sem BOM, com CRLF.
+- 23:23 UTC: VM2, estado final antes de desalocar (só leitura).
+  - Resultado: `/` com 20G de 29G (69%); `/data` com 316K de 251G (1%). 0 containers, 0 imagens, 0 volumes, 0 de cache de build. Crontabs do `azureps` e do root sem linhas ativas; nenhuma unit com `hibou`, `inference`, `aznfs` ou `pathsol`; 0 units em falha; nenhum timer do legado. Driver NVIDIA 595.71.05 (Tesla T4) e `nvidia-container-toolkit` 1.19.0-1 instalados; docker e containerd ativos; `~/inference` ausente.
+- 23:23:29 UTC: conferência do passo 3: a `stpathsolutionsblob001` ainda existe (`Succeeded`).
+- 23:31:07 UTC: o modo de permissão automático está ativo nesta sessão, então os comandos podem rodar sem a confirmação que valia como autorização. A partir daqui, as autorizações são pedidas no chat. O Pedro autorizou no chat as ações 1 (runbook) e 2 (desalocar a VM2) do passo 7 e informou que revogou o token do GitHub.
+- 23:31:07 UTC: runbook `TurnOn-VMs`: conferência de que o conteúdo publicado não mudou desde a leitura; envio do rascunho sem a VM2 com `curl --data-binary` (o `az rest` mandaria o corpo em Latin-1); conferência byte a byte e publicação (`POST .../publish`).
+  - Resultado: rascunho aceito (HTTP 202), idêntico ao arquivo novo, e publicado às 23:31:10 UTC (`Published`). O conteúdo publicado, lido de novo, é idêntico byte a byte ao arquivo novo: a lista `$VMs` só tem a VM1. Fica pendente a conferência no job de 16/10, às 06:00 BRT.
+- 16/10, 00:01:12 UTC: `az vm deallocate -g rg-prod-brsouth-001 -n vm-appfoundation-prod-001`.
+  - Resultado: `VM deallocated` às 00:01:49 UTC. Passo 7 concluído na VM2, faltando conferir no job de 16/10, às 06:00 BRT, que só a VM1 foi ligada. A VM2 fica desalocada até a Fase 4. Daqui em diante, os horários são de 16/10/2026.
