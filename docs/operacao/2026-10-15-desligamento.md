@@ -98,3 +98,87 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
 
 - 16/10, 09:01 UTC: a VM1 religou pelo runbook. A sessão de 15/10 caiu durante uma leitura (inspeção dos volumes Docker da VM1), sem nenhuma ação em andamento.
 - 16/10, 19:58 UTC: conferência do passo 7. O job `TurnOn-VMs` das 09:00:54 UTC terminou `Completed` e, no activity log das últimas 12 h, só aparece o start da VM1. A VM2 segue `VM deallocated`. Passo 7 concluído.
+- 16/10, 20:03:38 UTC: autorização do Pedro no chat para as 7 ações do passo 4 na VM1, em sequência, sem pedido a cada uma. Se algo divergir, parar e perguntar: container, volume ou unit fora da lista, volume bind fora do `/data` ou qualquer erro. No passo 5, avaliar formatar o disco de dados em vez de apagar arquivo por arquivo. Se a raiz do Docker estiver no `/data`, as ações 2 (volumes) e 3 (imagens) podem ser puladas. O plano do passo 5 espera um "pode formatar" do Pedro. O Pedro está apagando a `stpathsolutionsblob001` (passo 3).
+- 16/10, 20:09:45 UTC: VM1, leitura dos volumes (só leitura).
+  - Resultado: 5 containers, todos do compose `pathsolutions_v2`; 8 volumes `local` sem opções de driver (6 `pathsolutions_v2_*` e 2 anônimos), todos em `/data/docker/volumes`, nenhum bind fora do `/data`. Binds dos containers: `/data/pathsolutions/*`, `/var/run/docker.sock` e dois caminhos de código em `/home/azureps/Pathsolutions_V2`. Raiz do Docker em `/data/docker` e do containerd em `/data/containerd` (link `/var/lib/containerd`): as ações 2 (volumes) e 3 (imagens) ficam para a formatação, como o Pedro autorizou.
+- 16/10, 20:09:45 UTC: VM1, ação 4.1: `docker compose -p pathsolutions_v2 -f docker-compose.yml down --remove-orphans`.
+  - Resultado: **erro, nada mudou.** O compose não recebeu as variáveis do legado (`ENTRADA_DIR`, `SAIDA_DIR`, `DATA_DIR`, `LOGS_DIR` e outras; o arquivo de variáveis não foi lido) e parou na validação: `invalid spec: :/path_solutions/entrada: empty section between colons` (rc=1). Continuam 5 containers, 1 rede do projeto, 8 volumes e 17 imagens. Parado para perguntar ao Pedro, pela regra de parar em qualquer erro.
+- 16/10, 20:13:39 UTC: VM1, ação 4.1, segunda forma (escolha do Pedro): `docker compose -p pathsolutions_v2 down --remove-orphans`, sem o arquivo do compose.
+  - Resultado: 5 containers e a rede do projeto removidos (rc=0), com 0 containers no fim. Volumes (8) e imagens (17) ficam para a formatação. Montagens sob `/data`: 1. Portas 3000/6379/8000 em escuta: 0.
+- 16/10, 20:14:01 UTC: VM1, ação 4.4: `systemctl disable --now pathsolutions-backup.timer`, `stop` e `reset-failed` da service, remoção dos dois arquivos de `/etc/systemd/system` e `systemctl daemon-reload`.
+  - Resultado: 0 unit files `pathsolutions-backup`, 0 arquivos ou links em `/etc/systemd/system` e nenhuma das duas em falha.
+- 16/10, 20:14:02 UTC: VM1, ação 4.5: remoção da linha `@reboot` do backup no crontab do `azureps`.
+  - Resultado: **erro.** o crontab não aceitou o arquivo novo. Parado para perguntar ao Pedro.
+  - Observações: na ação 4.4, o `reset-failed` respondeu "Unit ... not loaded" para as duas units, que o systemd já tinha descarregado depois do `stop`; nenhuma estava em falha. Na ação 4.5, o `crontab <arquivo>` truncou o caminho longo do arquivo temporário (mais de 100 caracteres) e não aplicou nada: o crontab continua idêntico ao de antes, com a linha `@reboot`. Parado para perguntar ao Pedro.
+- 16/10, 20:15:17 UTC: VM1, ação 4.5, retomada com autorização do Pedro: `crontab -` lendo da entrada padrão o crontab sem a linha `@reboot` do backup.
+  - Resultado: 0 linhas ativas no crontab do `azureps` (ficam 0 linhas de comentário).
+- 16/10, 20:15:17 UTC: VM1, ação 4.6: `systemctl disable --now nginx.service certbot.timer`, sem desinstalar.
+  - Resultado: nginx disabled/inactive; certbot.timer disabled/inactive. Portas 80/443 sem escuta. Pacotes, configuração, certificado e os logs em `/var/log/nginx` ficam.
+- 16/10, 20:15:18 UTC: VM1, ação 4.7: simulação e `apt-get remove -y aznfs` (sem autoremove).
+  - Resultado: `aznfs` removido (status `deinstall ok config-files`, sem purge). 0 units `aznfs`. `/etc/fstab` com 0 entradas NFS e 0 montagens NFS ativas: nenhuma entrada de montagem a remover. Passo 4 na VM1 concluído; as ações 2 e 3 ficam cobertas pela formatação do passo 5.
+
+## Passo 5 na VM1: levantamento (só leitura)
+
+- 16/10, 20:03 UTC: disco de dados. O `/data` é o `/dev/sda` (LUN 0, `/dev/disk/azure/scsi1/lun0`), com 512G, ext4 no disco inteiro, rótulo `data` e UUID `3afbd359-2c66-4644-ba14-cbdf5cd8ebb9`. O disco de SO hoje é o `sdb`; em 14/10 os nomes estavam trocados. Linha do fstab: `UUID=3afbd359-… /data ext4 defaults,nofail,discard 0 2`. O `daemon.json` tem `data-root` em `/data/docker`; `/var/lib/docker` não existe; `/var/lib/containerd` é link para `/data/containerd` (root:root 700), o único link do disco de SO para o `/data`. Donos nos 2 primeiros níveis do `/data`: uid 999, `azureps` e root.
+- 16/10, 20:17:39 UTC: disco de SO. Em uso: `/` com 22G de 29G (77%) e `/data` com 477G de 503G (100%).
+  - `~/.git-credentials`: 1 linha, `https://github.com`, com usuário de 22 caracteres. Credential helper global: `store`.
+  - `~/.gemini/projects.json` liga `/home/azureps/Pathsolutions_V2` a `pathsolutions-v2`. Histórico: `tmp/pathsolutions-v2` com 760K e `history/pathsolutions-v2` com 184K. Fora do pedido: `antigravity` (468K), `antigravity-ide` (23M), `oauth_creds.json` (1.732 B), `google_accounts.json` (68 B), `config` e `installation_id`.
+  - `~/Pathsolutions_V2`: 238M.
+  - `/mount/stpathsolutionsdata001`: não montado, mas com 6,7G gravados no disco de SO: 158 arquivos de maio de 2026 (17 `.svs`, 62 `.npy` e 79 `.json`), em 3 pastas.
+  - Fora da lista:
+    - `~/pathsolutions.bundle` (6,5M): o único head, `1316dec4`, está em 13 branches do remoto.
+    - `~/deploy_pendente`: os 2 scripts estão em `origin/legado-final/sobras`, conferidos por hash git.
+    - `~/micra` e `/mnt/pathsolutions`: 2 pastas vazias cada, sem arquivos.
+- 16/10, 20:39 UTC: revisão independente do plano do passo 5 (3 revisores, só leitura): nenhum bloqueador. Entraram no plano:
+  - travas por lun0, by-lun/0, tamanho, disco do `/` e data de criação do fs;
+  - porta dura depois do `mount -a`;
+  - `sudo` nas conferências;
+  - corte às 22:15 UTC;
+  - `sudo rm` no `Pathsolutions_V2`, que tem entradas de root.
+  Achados da revisão:
+  - uma janela do Antigravity tem 4 processos com cwd em `~/Pathsolutions_V2`, desde as 19:57, entre eles um segundo Claude Code;
+  - o socket do Docker estava com o grupo `systemd-journal`, e não `docker`, e um container do legado montava `/var/run/docker.sock`;
+  - o `docker info` mostra que as imagens ficam no containerd (snapshotter), cuja raiz também está no `/data`.
+- 16/10, 20:49:53 UTC: decisões do Pedro no chat:
+  - "Pode formatar, mesmo UUID": `mkfs.ext4 -U` com o UUID atual, sem editar o fstab.
+  - Sobras a apagar no mesmo passo: bundle e `deploy_pendente`; rastros no disco de SO (`~/.azcopy`, o cache do claude-cli e o `/tmp` do `Pathsolutions_V2`, `~/.docker/buildx`, `/root/.docker`, o alias `dcv` do `~/.bashrc` e a entrada `pathsolutions-v2` do `projects.json` do Gemini); o conteúdo de `/var/log/nginx`, mantendo a pasta.
+  - Sensíveis a apagar: `/root/.azure`, as transcrições do legado em `~/.claude/projects` (`-home-azureps-Pathsolutions-V2` e `-home-paths-Pathsolutions-V2`) e o resto do `~/.gemini` (`antigravity`, `antigravity-ide`, `oauth_creds.json` e `google_accounts.json`).
+  - Ficam: `~/micra` e `/mnt/pathsolutions`.
+- 16/10, 20:49:53 UTC: VM1, passo 5.1: registro antes de parar (só leitura).
+  - Resultado: `docker info` = `/data/docker|overlayfs|[["driver-type","io.containerd.snapshotter.v1"]]|io.containerd.runc.v2,runc,|runc`; 17 imagens, 8 volumes, 0 containers. `daemon.json` = `{"data-root": "/data/docker"}`. containerd: `17:#root = "/var/lib/containerd"`. Link: '/var/lib/containerd' -> '/data/containerd' (destino root:root 700). Dono do `/data`: azureps:azureps 755. df:/ 29G 22G 6.7G 77%;/data 503G 477G 750M 100%;
+- 16/10, 20:49:53 UTC: VM1, passo 5.2: `systemctl stop docker.socket docker.service containerd.service` e `systemctl mask --runtime` das três.
+  - Resultado: as três units estão paradas e mascaradas em runtime. Nenhum processo usa o `/data` (`fuser`), e não há submontagens.
+- 16/10, 20:49:54 UTC: VM1, passo 5.3: travas do disco-alvo (só leitura).
+  - Resultado: alvo `/dev/sda`, que é lun0, by-lun/0 e a origem do `/data`. O disco do `/` é `/dev/sdb`. São 549.755.813.888 bytes, sem partições; UUID e data de criação (Tue May 5 00:28:20 2026) conferem.
+- 16/10, 20:49:54 UTC: VM1, passo 5.4: `umount /data`.
+  - Resultado: `/data` desmontado, sem nenhuma montagem de 8:0 em namespace algum. O ponto de montagem no disco de SO está vazio, e as três units continuam paradas.
+- 16/10, 20:50:13 UTC: VM1, passo 5.5: `mkfs.ext4 -F -L data -U 3afbd359-2c66-4644-ba14-cbdf5cd8ebb9 -E root_owner=1000:1000 /dev/sda`, com o mesmo UUID (decisão do Pedro) e TRIM do disco inteiro, padrão do mkfs.
+  - Resultado: mkfs concluído em 7 s (rc=0): Discarding device blocks: 0/134217728 done  Creating journal (262144 blocks): done Writing superblocks and filesystem accounting information: 0/4096 4/4096 done 
+- 16/10, 20:50:20 UTC: VM1, passo 5.6: `udevadm settle`, `findmnt --verify --verbose`, `mount -a` e porta dura. O fstab não muda, porque o UUID é o mesmo.
+  - Resultado: **parado.** findmnt --verify acusou erros:    [ ] FS type is ext4. Aguardando o Pedro.
+  - Diagnóstico (21:02:19 UTC, só leitura): falso positivo da conferência do script. O resumo do `findmnt --verify` ("0 parse errors, 0 errors, 1 warning", rc=0) sai pelo stderr e apareceu no começo da saída, e o script esperava encontrá-lo na última linha. O único aviso é do `/swapfile` ("non-bind mount source /swapfile is a directory or regular file"), sem relação com o `/data`. A seção do `/data` não tem [E] nem [W]. Estado: `/dev/sda` formatado (UUID `3afbd359-…`, rótulo `data`, criado em 16/10/2026 às 20:50:13), mas **não montado**. Docker e containerd estão parados e mascarados em runtime. Pergunta ao Pedro: retomar do `mount -a`.
+- 16/10, 21:05:08 UTC: decisão do Pedro: parar aqui. O passo 5 da VM1 fica parcial.
+
+## Situação ao fim da sessão de 16/10
+
+- Concluídos: passos 0, 1 e 2; passo 4 nas duas VMs; passo 5 na VM2; passo 7.
+- Passo 3: pendente com o Pedro. A conferência das 21:05:08 UTC deu: `Succeeded`.
+- Passo 5 na VM1: parcial.
+  - Feito: 5.1 a 5.5 (registro, parada, travas, `umount` e `mkfs` com o mesmo UUID). O `/dev/sda` está formatado (criado em 16/10/2026 às 20:50:13 UTC) e **desmontado**. `docker.socket`, `docker.service` e `containerd.service` estão parados e mascarados em runtime; a máscara some no próximo boot.
+  - Falta:
+    - 5.6: `findmnt --verify`, conferindo o resumo do stderr ("0 errors") e nenhum [E] ou [W] no `/data`; depois `mount -a` e a porta dura.
+    - 5.7: `/data/containerd` com modo 700 e `/data/docker` com 710.
+    - 5.8: unmask, religar e comparar o `docker info` com o registro do 5.1.
+    - Item 9: disco de SO e as sobras decididas pelo Pedro às 20:4x.
+    - `git config --global --unset credential.helper`.
+    - `df -h` final.
+- Passo 6 (órfãos no Azure): não iniciado.
+- Próximo boot: o auto-shutdown desaloca a VM1 hoje às 23:00 UTC, e o runbook a liga na segunda, 19/10, às 09:00 UTC.
+  - O fstab, com o mesmo UUID e `nofail`, deve montar o `/data` novo e vazio.
+  - O containerd deve falhar ao subir, porque `/var/lib/containerd` aponta para `/data/containerd`, que não existe no fs novo. O Docker depende dele.
+  - As duas coisas são inferência, não testada. Nada que rode na VM1 depende do Docker.
+- Primeira ação da próxima sessão, só leitura:
+  - `findmnt /data`;
+  - `sudo tune2fs -l /dev/disk/azure/scsi1/lun0 | grep created`, que deve dar 16/10/2026 às 20:50:13;
+  - `systemctl is-active containerd docker`.
+  Depois, retomar do 5.6 com autorização do Pedro. Se o `/data` estiver montado, o `mount -a` não muda nada, e a porta dura vale do mesmo jeito.
