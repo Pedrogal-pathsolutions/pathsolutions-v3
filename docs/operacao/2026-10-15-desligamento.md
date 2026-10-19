@@ -297,3 +297,24 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
   - O NSG tem 3 regras de entrada só do legado: 8001, 6379 e 5432, entre as VMs. Tem também 80 e 443 abertas para qualquer origem, mas nada escuta nelas.
   - Journal: 568,3M.
 - 19/10, 21:22:09 UTC: passo 5 concluído na VM1. Commit e push deste registro.
+- 19/10, 21:25:32 UTC: passo 6, conferência inicial (só leitura): subscrição `bd87a1ca…` ativa; `az resource list` do grupo comparado com os 27 recursos das 19:21.
+  - Resultado: iguais; a `stpathsolutionsblob001`, do passo 3, fica fora da comparação (1 storage account no grupo). Sub-rede `default` com o NSG `nsg-app-prod-001` e 3 configurações de IP (as 2 VMs e o endpoint).
+- 19/10, 21:25:39 UTC: passo 6.1: `az network private-endpoint delete -g rg-prod-brsouth-001 -n pe-stpathsolutionsdata001-file` (`Disconnected`; a conta-alvo não existe). A NIC `pe-stpathsolutionsdata001-file.nic.9b6d5aa7-f952-4d24-83ea-53bae3c1c8f8` sai junto.
+  - Resultado: private endpoint e NIC excluídos (`show` dos dois: NotFound). A sub-rede `default` continua com o NSG e ficou com 2 configurações de IP, as das VMs. `az resource list` sem os dois e sem nenhuma outra mudança.
+- 19/10, 21:26:19 UTC: passo 6.2: `az network private-dns link vnet delete -g rg-prod-brsouth-001 -z privatelink.file.core.windows.net -n axi3rxmfnch4o --yes`.
+  - Resultado: link excluído; `az resource list` sem ele e sem nenhuma outra mudança.
+- 19/10, 21:26:56 UTC: passo 6.3: `az network private-dns zone delete -g rg-prod-brsouth-001 -n privatelink.file.core.windows.net --yes` (registros: SOA e A `stpathsolutionsdata001` → 10.0.0.6, que saem com a zona).
+  - Resultado: zona excluída; `az resource list` sem ela e sem nenhuma outra mudança.
+- 19/10, 21:27:34 UTC: passo 6.4: `az automation runbook delete -g rg-prod-brsouth-001 --automation-account-name asa-prod-brsouth-001 -n <runbook> --yes` para `AzureAutomationTutorialWithIdentity` e `AzureAutomationTutorialWithIdentityGraphical` (sem agenda, sem job e sem webhook).
+  - Resultado: os 2 runbooks excluídos. O `TurnOn-VMs` continua `Published`, ligado à agenda `TurnOn-VMs`, que continua ativa. `az resource list` sem os dois e sem nenhuma outra mudança.
+- 19/10, 21:27:47 UTC: passo 6.5: `az resource delete -g rg-prod-brsouth-001 -n azurevm --resource-type Microsoft.Web/connections` (`Error`; 0 Logic Apps).
+  - Resultado: API connection excluída. O grupo ficou com 20 recursos: os 19 que ficam e a `stpathsolutionsblob001`, do passo 3.
+- 19/10, 21:28:07 UTC: conferência do passo 3: `az storage account show -n stpathsolutionsblob001 -g rg-prod-brsouth-001` e `az resource list --resource-type Microsoft.Storage/storageAccounts`.
+  - Resultado: a `stpathsolutionsblob001` ainda existe (rc=0, `Succeeded`, criada em 27/05/2026). É a única storage account da subscrição. O passo 3 continua pendente com o Pedro.
+  - Recursos no fim do dia: 20 no grupo `rg-prod-brsouth-001` e o `NetworkWatcher_brazilsouth` no `NetworkWatcherRG`. No grupo ficam:
+    - a conta de automação com o runbook `TurnOn-VMs`;
+    - as 2 VMs, os 4 discos, as 2 extensões e a chave SSH;
+    - os 2 agendamentos de auto-shutdown;
+    - as 2 NICs das VMs, o NSG, os 2 IPs públicos e a VNet;
+    - a `stpathsolutionsblob001`.
+- 19/10, 21:28 UTC: correção sobre a espera da tarde. Das 19:26 às 20:31, a sessão ficou parada esperando a aprovação de um comando só de leitura (fstab, units e a conferência do bundle). A revisão independente começou às 20:40:00, sem espera.
