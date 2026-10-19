@@ -318,3 +318,30 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
     - as 2 NICs das VMs, o NSG, os 2 IPs públicos e a VNet;
     - a `stpathsolutionsblob001`.
 - 19/10, 21:28 UTC: correção sobre a espera da tarde. Das 19:26 às 20:31, a sessão ficou parada esperando a aprovação de um comando só de leitura (fstab, units e a conferência do bundle). A revisão independente começou às 20:40:00, sem espera.
+- 19/10, 21:49:29 UTC: entradas que estavam só na transcrição desta sessão (registro tardio):
+  - 19:24:03: `az vm get-instance-view` da VM2: `VM deallocated`.
+  - 20:44:29: leitura, no clone local do legado, das tags e das referências `origin/*` gravadas pelo fetch de 15/10, antes de apagar a pasta. As 2 tags são leves (o objeto da tag é o próprio commit). Há 2 branches locais sem cópia no remoto: os 2 commits da `fix/audit-2026-09-dev`, cujo conteúdo está na `legado-final/audit-dev` (registro de 15/10). Hashes completos:
+    - `origin/docs/gpu2-plan`: `34a5d1b67fb3e8def26e6cea3e1032608a28a6bf`
+    - `origin/feat/poc-semana1`: `4d955212761ab9e69e5ec884129cccdce1028808`
+    - `origin/fix/archive-cache-eviction`: `971311a66d54b722c56d7776a9812238cf63506b`
+    - `origin/fix/audit-2026-09`: `ec70dbf89b69895525fb7db50f455ac1af834b7e`
+    - `origin/fix/case-slide-id-cluster`: `9850c16e1e4411b8123ad62bb129d386be938c39`
+    - `origin/fix/dashboard-cases`: `4375cd48b5d7a70d557902aec8c9bd3dab27c89a`
+    - `origin/fix/iiif-auth`: `58219b0a113c3f0ec44a30b53762f5ab3fcc735f`
+    - `origin/fix/macenko-inference`: `08acc6d8c68453ba4de37f91b4f54dbff2501a15`
+    - `origin/fix/poller-txleak`: `ec05c442f8b51d2782dbd5ac0377c37eb0559321`
+    - `origin/fix/viewer-precisao`: `d2345b5aaf94d323507280f148baf837e5052908`
+    - `origin/legado-final/audit-dev`: `7f8efed5cbaa79252875c50b1411dfbafeb6c18b`
+    - `origin/legado-final/sobras`: `00c4232484edec15a93b0a082397c05b9365a89f`
+    - `origin/main`: `4d955212761ab9e69e5ec884129cccdce1028808`
+    - `legado-final-2026-10-15`: `ec70dbf89b69895525fb7db50f455ac1af834b7e`
+    - `prod-snapshot-2026-09-15`: `30dcd00e7e10efd2b1a0c998932cbf786238d787`
+  - 21:19:32: item 9, ensaio só das pré-condições, numa cópia do script que gravava num registro de rascunho e saía antes de apagar. Todas as portas passaram, com os valores da entrada das 21:19:52.
+  - 21:25:18: passo 6, ensaio das portas iniciais, do mesmo jeito. Passaram.
+  - O estado final da VM1 da entrada do item 10 foi lido às 21:20:07; 21:22:09 é o horário em que a entrada foi escrita.
+- 19/10, 21:49:29 UTC: fatos novos da verificação do relatório (verificadores só de leitura, conferidos por mim às 21:48):
+  - `stpathsolutionsblob001`: o activity log dela, de 15/10 até agora, só tem 9 `listKeys` (Started e Succeeded), todos da coleta da Fase 0. **Não há nenhuma operação de exclusão, nem com falha.** A exclusão que o Pedro informou em 16/10 às 20:03 não chegou ao Azure. O motivo não foi verificado, e o grupo não tem locks.
+  - A mesma conta recebeu envios por SAS em 16/10, só nas horas das 17:00 e das 18:00 UTC (14:00 a 15:59 de Brasília), com o legado ainda no ar: 566 `PutBlock`, 9 `PutBlockList`, 9 `PutBlob` e 18 `GetBlobProperties`. A capacidade usada foi de 803,31 GiB (16/10 às 00:00) para 809,92 GiB (18/10). De 17/10 em diante, 0 transações. Que sejam lâminas novas enviadas pela extensão do legado é inferência, pelo padrão de envio por SAS da Fase 0.
+  - Em 16/10 às 02:58:34, o Portal do Azure mandou desalocar as duas VMs. A VM1 ficou desalocada às 02:59:24. Na VM2, que já estava desalocada desde 00:01:28 (fim da operação da CLI; o estado foi lido às 00:01:49), a operação terminou às 02:58:36 sem efeito. Foi isso que derrubou a sessão de 15/10 "durante uma leitura" (entrada de 16/10, 09:01). As duas ações não são desta sessão; o chamador não foi impresso.
+  - O `nfs-common` continua instalado na VM1: o `aznfs` saiu sem autoremove. A simulação `apt-get -s remove rpcbind` remove o `rpcbind` e o `nfs-common`.
+  - O NSG tem 4 regras de entrada entre as VMs, e não 3: 8001, 22 (`Allow-VM1-VM2-SSH`), 6379 e 5432.
