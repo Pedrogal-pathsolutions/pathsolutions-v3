@@ -345,3 +345,20 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
   - Em 16/10 às 02:58:34, o Portal do Azure mandou desalocar as duas VMs. A VM1 ficou desalocada às 02:59:24. Na VM2, que já estava desalocada desde 00:01:28 (fim da operação da CLI; o estado foi lido às 00:01:49), a operação terminou às 02:58:36 sem efeito. Foi isso que derrubou a sessão de 15/10 "durante uma leitura" (entrada de 16/10, 09:01). As duas ações não são desta sessão; o chamador não foi impresso.
   - O `nfs-common` continua instalado na VM1: o `aznfs` saiu sem autoremove. A simulação `apt-get -s remove rpcbind` remove o `rpcbind` e o `nfs-common`.
   - O NSG tem 4 regras de entrada entre as VMs, e não 3: 8001, 22 (`Allow-VM1-VM2-SSH`), 6379 e 5432.
+- 19/10, 22:05:22 UTC: conferência do passo 3, depois de o Pedro informar que apagou a `stpathsolutionsblob001` pelo terminal (só leitura): `az storage account show -n stpathsolutionsblob001 -g rg-prod-brsouth-001`, `az resource list --resource-type Microsoft.Storage/storageAccounts` e o activity log da conta.
+  - Resultado:
+    - `show`: `ResourceNotFound` (rc=3);
+    - 0 storage accounts na subscrição;
+    - o grupo `rg-prod-brsouth-001` tem 19 recursos;
+    - activity log: `Microsoft.Storage/storageAccounts/delete` `Started` às 22:02:13 e `Succeeded` às 22:02:16, pelo aplicativo da Azure CLI, e uma segunda chamada às 22:02:30, `Succeeded` no mesmo segundo. Que a segunda não tenha tido efeito a mais é inferência, porque a conta já não existia.
+  - **Passo 3 concluído.** Com a conta saíram as WSIs, os prováveis dumps, os envios de 16/10 e as chaves.
+- 19/10, 22:06:10 UTC: respostas do Pedro à seção 10 do relatório:
+  1. Diagnose: o Pedro avisa hoje sobre os envios de 16/10 e pede de novo que desativem a extensão.
+  2. `~/.gemini/antigravity-ide`: fica. O Pedro decide quando deixar de usar o Antigravity na VM1.
+  3. Itens do risco 4: ficam para a Fase 3, que prepara a VM1 para a v3. Sobre o nginx, o certificado e os pacotes, a Fase 2 decide.
+  4. Regras do NSG do legado e `rpcbind`: Fase 3, no plano de rede. As portas 80 e 443 também; a Fase 2 define o que vai escutar nelas.
+  5. `fstrim` no `/data` da VM2: primeira ação da Fase 4, quando ela ligar.
+  6. Plano da Fase 3: entram `RequiresMountsFor=/data` no containerd e no docker, o dono do `docker.sock` e o teto para o journal e para os logs do Docker.
+  7. `codex`: fica, e o Pedro não usa o ChatGPT nesta VM durante as fases.
+  8. A desalocação da VM1 pelo Portal em 16/10 às 02:58 UTC foi do Pedro.
+- 19/10, 22:06:10 UTC: o Pedro escreveu "APROVADO FASE 1". A Fase 2 começa numa sessão nova.

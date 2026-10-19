@@ -12,7 +12,7 @@ Não houve snapshots (decisão do Pedro em 15/10/2026). O que foi apagado não t
 | Processos Codex | os 2 da época foram encerrados em 15/10. Em 19/10 apareceu 1 novo, da extensão ChatGPT, que ficou por decisão do Pedro |
 | 1. Código: tag e push | concluído em 15/10; o Pedro informou que revogou o token (não verificado, seção 8) |
 | 2. Valores visuais | concluído em 15/10, em `docs/v3/referencia-visual.md` |
-| 3. `stpathsolutionsblob001` | **pendente**: a conta existia em 19/10 às 21:28. A exclusão informada pelo Pedro em 16/10 não chegou ao Azure: o activity log da conta não tem nenhuma operação de exclusão |
+| 3. `stpathsolutionsblob001` | concluído em 19/10: o Pedro apagou a conta pelo terminal às 22:02, e a conferência das 22:05 deu `ResourceNotFound` (seção 11). A exclusão informada em 16/10 não tinha chegado ao Azure |
 | 4. Parar e remover o legado | concluído: VM2 em 15/10, VM1 em 16/10 |
 | 5. Dados do legado | concluído: VM2 em 15/10; VM1 com o `mkfs` em 16/10 e o resto em 19/10. Por decisão do Pedro, ficou o `~/.gemini/antigravity-ide`, usado pela janela atual do Antigravity |
 | 6. Órfãos no Azure | concluído em 19/10, com 7 recursos excluídos |
@@ -23,10 +23,10 @@ Não houve snapshots (decisão do Pedro em 15/10/2026). O que foi apagado não t
   - o disco de SO foi de 22G (78%) para 15G (53%);
   - o Docker está de pé e vazio, com a mesma configuração de antes.
 - **VM2:** está desalocada desde 16/10. Na última leitura, em 15/10 às 23:23, o `/data` tinha 316K, sem dados do legado; não foi relido depois (seção 8).
-- **Economia estimada:** ~R$ 1,34 mil a ~R$ 1,50 mil por mês agora, e mais ~R$ 100 a ~R$ 137 quando a storage account sair (seção 6).
-- **Para fechar a Fase 1, falta o passo 3:** o Pedro apagar a `stpathsolutionsblob001` pelo Portal, e uma sessão conferir.
+- **Economia estimada:** ~R$ 1,44 mil a ~R$ 1,63 mil por mês, já com a storage account apagada (seção 6).
+- **Passo 3:** concluído em 19/10 às 22:02, depois da entrega deste relatório (seção 11).
 - **Fato novo:** em 16/10, das 14:00 às 15:59 de Brasília, com o legado ainda no ar, a conta recebeu envios por SAS: 9 uploads em blocos e 9 diretos, com +6,6 GiB (achado 12).
-- **Decisões pedidas:** seção 10.
+- **Decisões pedidas:** seção 10. As respostas do Pedro e a aprovação estão na seção 11.
 
 ## 2. Passo a passo
 
@@ -63,7 +63,8 @@ Os horários são UTC. Cada linha remete ao registro, onde estão o comando exat
 - Em 16/10 às 20:03, o Pedro informou que estava apagando a conta. O activity log dela, de 15/10 até 19/10 às 21:48, não tem nenhuma operação de exclusão, nem com falha: só os 9 `listKeys` da coleta da Fase 0. A exclusão não chegou ao Azure, e o motivo não foi verificado. O grupo não tem locks.
 - Em 16/10 a conta recebeu envios novos (achado 12).
 - Na última, `az storage account show -n stpathsolutionsblob001 -g rg-prod-brsouth-001` deu rc=0, e ela é a única storage account da subscrição.
-- **Pendente.** A conferência que fecha o passo é `ResourceNotFound` no `show` e a conta fora do `az resource list --resource-type Microsoft.Storage/storageAccounts`. Ela fica para a sessão seguinte à exclusão.
+- 19/10, 22:02:13 a 22:02:16: o Pedro apagou a conta pelo terminal. No activity log, `Microsoft.Storage/storageAccounts/delete` terminou `Succeeded`, pelo aplicativo da Azure CLI, e uma segunda chamada às 22:02:30 também terminou `Succeeded`.
+- 19/10, 22:05:22: conferência. O `show` deu `ResourceNotFound` (rc=3), a subscrição tem 0 storage accounts e o grupo tem 19 recursos. **Passo 3 concluído.**
 
 ### Passo 4: parar e remover o legado
 
@@ -149,7 +150,7 @@ Os horários são UTC. Cada linha remete ao registro, onde estão o comando exat
 
 - 15/10, 22:01: o auto-shutdown desalocou a VM2 no meio do passo 4 (seção acima).
 - 15/10, 23:01:14: o auto-shutdown desalocou a VM1, e a sessão caiu antes do registro e do push. Nada além do registrado tinha rodado. A VM1 foi ligada pelo Portal às 23:04:43.
-- 16/10, 02:58:34: o Portal do Azure desalocou a VM1 (concluído às 02:59:24) e mandou desalocar a VM2, que já estava desalocada. Isso derrubou a sessão de 15/10, que estava numa leitura, sem nenhuma ação em andamento. As duas ações não são desta sessão, e o chamador não foi impresso. A VM1 voltou pelo runbook às 09:02.
+- 16/10, 02:58:34: o Portal do Azure desalocou a VM1 (concluído às 02:59:24) e mandou desalocar a VM2, que já estava desalocada. Isso derrubou a sessão de 15/10, que estava numa leitura, sem nenhuma ação em andamento. As duas ações não são desta sessão: a desalocação da VM1 foi do Pedro, como ele informou em 19/10, e a da VM2 saiu no mesmo segundo, também pelo Portal. A VM1 voltou pelo runbook às 09:02.
 - 16/10, 21:05: parada por decisão do Pedro, depois do falso positivo do 5.6.
 - 19/10, das 19:26 às 20:31: a sessão ficou parada, esperando na tela a aprovação de um comando só de leitura (fstab, units e a conferência do bundle).
 
@@ -223,6 +224,7 @@ Remoto do legado: `github.com/Pedrogal-pathsolutions/Pathsolutions_V2`. Os hashe
 | `asa-prod-brsouth-001/AzureAutomationTutorialWithIdentity` | runbook | 19/10 21:27:34 |
 | `asa-prod-brsouth-001/AzureAutomationTutorialWithIdentityGraphical` | runbook | 19/10 21:27:34 |
 | `azurevm` | API connection | 19/10 21:27:47 |
+| `stpathsolutionsblob001` | storage account do legado, apagada pelo Pedro pelo terminal (passo 3) | 19/10 22:02:16 |
 
 Mudanças sem exclusão:
 - o runbook `TurnOn-VMs` ficou só com a VM1 (15/10, 23:31:10);
@@ -230,7 +232,7 @@ Mudanças sem exclusão:
 
 ### Ficaram
 
-São 20 recursos no `rg-prod-brsouth-001` e 1 no `NetworkWatcherRG`:
+São 19 recursos no `rg-prod-brsouth-001` e 1 no `NetworkWatcherRG` (conferido em 19/10 às 22:05):
 
 | Recurso | O que é |
 |---|---|
@@ -244,7 +246,6 @@ São 20 recursos no `rg-prod-brsouth-001` e 1 no `NetworkWatcherRG`:
 | `pip-appfoundation-brsouth-001` e `pip-appfoundation-brsouth-002` | IPs públicos (o 001 está na VM1) |
 | `vnet-prod-brsouth-001` | VNet |
 | `asa-prod-brsouth-001` e `asa-prod-brsouth-001/TurnOn-VMs` | conta de automação e o runbook que liga a VM1 |
-| `stpathsolutionsblob001` | storage account do legado: **pendente (passo 3)** |
 | `NetworkWatcher_brazilsouth` (`NetworkWatcherRG`) | Network Watcher |
 
 O grupo `rg-pathsol-v3` ainda não existe.
@@ -259,9 +260,9 @@ Os valores são preço de tabela em reais, da API de Cost Management lida na Fas
 | Zona `privatelink.file.core.windows.net` | R$ 2,50 em set/26 | excluída | ~R$ 2,50 |
 | 2 runbooks de tutorial e a API connection `azurevm` | sem custo próprio na Fase 0 | excluídos | R$ 0 |
 | Computação da VM2 (com saída de dados) | R$ 1.456,12 em set/26 (315,0 h). Só no horário do runbook, ~13 h por dia útil, daria ~R$ 1,3 mil/mês | desalocada até a Fase 4 | ~R$ 1,3 mil a ~R$ 1,46 mil |
-| `stpathsolutionsblob001` | R$ 101,59 em set/26; ~R$ 136,72/mês pela capacidade de 14/10 (803,31 GiB) | pendente (passo 3) | ~R$ 100 a ~R$ 137, quando for apagada |
+| `stpathsolutionsblob001` | R$ 101,59 em set/26; ~R$ 136,72/mês pela capacidade de 14/10 (803,31 GiB) | apagada em 19/10 | ~R$ 100 a ~R$ 137 |
 
-- **Total agora:** ~R$ 1,34 mil a ~R$ 1,50 mil por mês, quase tudo da VM2 desalocada. Quando a storage account sair, somam-se ~R$ 100 a ~R$ 137.
+- **Total:** ~R$ 1,44 mil a ~R$ 1,63 mil por mês, quase tudo da VM2 desalocada e da storage account apagada.
 - **O que continua custando com o legado apagado:**
   - discos e IP da VM2 desalocada: P15 (R$ 339,54), P4 (R$ 47,16) e o IP público (R$ 18,61), ~R$ 405/mês;
   - o disco de dados da VM1 (P20, R$ 653,86 em set/26), agora com 332K usados de 503G. O tamanho é decisão da Fase 2.
@@ -282,7 +283,7 @@ Os valores são preço de tabela em reais, da API de Cost Management lida na Fas
     - o `daemon-reload` disparou o `apt-daily`, sem pacote alterado;
     - o dockerd criou a interface `docker0` e ligou o `ip_forward`, o padrão do Docker.
 11. **Divergência no item 9.** A pasta `~/.claude/projects/-home-paths-Pathsolutions-V2`, registrada como vazia, tinha um link para `~/pathsolutions-claude-context/memory`. O Pedro decidiu apagar a pasta com o link, e o destino ficou intacto.
-12. **Envios novos para o legado durante a Fase 1.** A `stpathsolutionsblob001` recebeu envios por SAS em 16/10, só nas horas das 17:00 e das 18:00 UTC (14:00 a 15:59 de Brasília), antes de o legado sair do ar na VM1 (20:13). Foram 566 `PutBlock`, 9 `PutBlockList`, 9 `PutBlob` e 18 `GetBlobProperties`, e a capacidade usada foi de 803,31 GiB para 809,92 GiB. De 17/10 em diante, 0 transações. Que sejam lâminas novas enviadas pela extensão do legado é inferência, pelo padrão de envio por SAS da Fase 0. Esses dados saem junto com a conta, e nada é exportado (D1).
+12. **Envios novos para o legado durante a Fase 1.** A `stpathsolutionsblob001` recebeu envios por SAS em 16/10, só nas horas das 17:00 e das 18:00 UTC (14:00 a 15:59 de Brasília), antes de o legado sair do ar na VM1 (20:13). Foram 566 `PutBlock`, 9 `PutBlockList`, 9 `PutBlob` e 18 `GetBlobProperties`, e a capacidade usada foi de 803,31 GiB para 809,92 GiB. De 17/10 em diante, 0 transações. Que sejam lâminas novas enviadas pela extensão do legado é inferência, pelo padrão de envio por SAS da Fase 0. Esses dados saíram junto com a conta, em 19/10 às 22:02, sem exportação (D1).
 
 ## 8. O que não foi possível verificar
 
@@ -298,7 +299,7 @@ Os valores são preço de tabela em reais, da API de Cost Management lida na Fas
 
 ## 9. Riscos
 
-1. **A `stpathsolutionsblob001` continua de pé** (passo 3). Ela guarda 1.033 `.svs` (588,16 GiB, Fase 0), os prováveis dumps do legado com dado de paciente (179,84 GiB, Fase 0) e os envios de 16/10 (achado 12). As duas chaves dela nunca foram rotacionadas. A exclusão informada em 16/10 não chegou ao Azure. Até a conta sair, continuam o risco de LGPD e o custo de ~R$ 100 a ~R$ 137 por mês.
+1. **`stpathsolutionsblob001`: resolvido em 19/10 às 22:02.** A conta saiu com as 1.033 `.svs` (588,16 GiB, Fase 0), os prováveis dumps do legado com dado de paciente (179,84 GiB, Fase 0), os envios de 16/10 (achado 12) e as duas chaves, que nunca tinham sido rotacionadas (seção 11).
 2. **Disco de dados da VM2 sem TRIM.** Os blocos do legado (WSIs locais, caches) podem continuar no disco gerenciado da VM2 até serem sobrescritos (seção 8). Um `fstrim -v /data`, na próxima vez que a VM2 ligar, resolve do lado do sistema de arquivos.
 3. **`~/.gemini/antigravity-ide` continua na VM1**, com conversas, `brain` e `knowledge` de maio a setembro, que podem citar o legado. Ficou porque a janela atual do Antigravity usa a pasta.
 4. **Itens que ficaram e ainda referenciam o legado:**
@@ -311,6 +312,8 @@ Os valores são preço de tabela em reais, da API de Cost Management lida na Fas
 
 ## 10. Decisões pedidas ao Pedro
 
+As respostas do Pedro, de 19/10, estão na seção 11.
+
 1. **Passo 3:** apagar a `stpathsolutionsblob001` pelo Portal, porque a exclusão de 16/10 não chegou ao Azure. Os envios de 16/10 (achado 12) saem junto: decidir se a Diagnose precisa saber disso, já que nada é exportado (D1). A conferência fica para a sessão seguinte. Se o Pedro preferir, ele aprova a Fase 1 com o passo 3 registrado como pendente.
 2. **`~/.gemini/antigravity-ide`:** apagar numa sessão aberta fora do Antigravity, ou manter.
 3. **Itens que ficaram (risco 4):** manter até a Fase 2 ou a 3, ou apagar já, um por um. A configuração do nginx, o certificado e os pacotes já estavam marcados para a Fase 2 decidir (skill, passo 4).
@@ -321,3 +324,19 @@ Os valores são preço de tabela em reais, da API de Cost Management lida na Fas
 8. **Aprovação da Fase 1:** "APROVADO FASE 1".
 
 PARADO — aguardando APROVADO FASE 1
+
+## 11. Depois da entrega: passo 3, respostas e aprovação (19/10)
+
+- **Passo 3 concluído.**
+  - O Pedro apagou a `stpathsolutionsblob001` pelo terminal. No activity log, o `delete` terminou `Succeeded` às 22:02:16, pela Azure CLI, com uma segunda chamada às 22:02:30.
+  - Na conferência das 22:05:22, `az storage account show` deu `ResourceNotFound` (rc=3), `az resource list --resource-type Microsoft.Storage/storageAccounts` não listou nenhuma conta, e o grupo ficou com 19 recursos.
+- **Respostas do Pedro à seção 10:**
+  1. Diagnose: o Pedro avisa em 19/10 sobre os envios de 16/10 e pede de novo que desativem a extensão.
+  2. `~/.gemini/antigravity-ide`: fica. O Pedro decide quando deixar de usar o Antigravity na VM1.
+  3. Itens do risco 4: ficam para a Fase 3, que prepara a VM1 para a v3. Sobre o nginx, o certificado e os pacotes, a Fase 2 decide.
+  4. Regras do NSG do legado, `rpcbind` e as portas 80 e 443: Fase 3, no plano de rede. A Fase 2 define o que vai escutar na 80 e na 443.
+  5. `fstrim` no `/data` da VM2: primeira ação da Fase 4, quando ela ligar.
+  6. Plano da Fase 3: entram `RequiresMountsFor=/data` no containerd e no docker, o dono do `docker.sock` e o teto para o journal e para os logs do Docker.
+  7. `codex`: fica, e o Pedro não usa o ChatGPT nesta VM durante as fases.
+  8. A desalocação da VM1 pelo Portal em 16/10 às 02:58 UTC foi do Pedro.
+- **APROVADO FASE 1**, escrito pelo Pedro em 19/10/2026. A Fase 2 começa numa sessão nova.
