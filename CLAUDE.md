@@ -74,3 +74,14 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 ## Idioma
 
 Relatórios e documentação em português do Brasil. Código, identificadores e comentários de código em inglês.
+
+## Skills externas
+
+- test-driven-development, systematic-debugging e verification-before-completion
+  (de obra/superpowers) valem dentro das fases. Elas não substituem os gates:
+  nenhuma fase avança sem "APROVADO FASE N".
+- impeccable: só para a interface (Fase 6). A referência visual em
+  docs/v3/referencia-visual.md prevalece. Use critique, audit, polish, harden,
+  clarify, adapt, layout e typeset dentro dela. bolder, delight, overdrive,
+  colorize e animate só com pedido do Pedro. Na primeira execução, o impeccable
+  baixa um binário próprio; isso pede autorização.
