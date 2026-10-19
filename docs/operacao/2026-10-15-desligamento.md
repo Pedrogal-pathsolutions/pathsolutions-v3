@@ -182,3 +182,118 @@ Cada entrada traz o horário de início em UTC, o comando ou a ação, e a saíd
   - `sudo tune2fs -l /dev/disk/azure/scsi1/lun0 | grep created`, que deve dar 16/10/2026 às 20:50:13;
   - `systemctl is-active containerd docker`.
   Depois, retomar do 5.6 com autorização do Pedro. Se o `/data` estiver montado, o `mount -a` não muda nada, e a porta dura vale do mesmo jeito.
+
+## Retomada em 19/10/2026
+
+- 19/10, 09:02:11 UTC: a VM1 religou pelo runbook (job `TurnOn-VMs` das 09:01:31 às 09:01:51 UTC, `Completed`). A VM2 continua `VM deallocated`. O auto-shutdown da VM1 continua `Enabled`, às 20:00 de Brasília (23:00 UTC).
+- 19/10, 18:52 UTC, sessão à parte, a pedido do Pedro: as 4 skills externas foram extraídas do `skills-externas.zip` para `.claude/skills/`, o zip foi apagado, e a seção "Skills externas" entrou no `CLAUDE.md`. Commit `9585e59`, no remoto. Não faz parte do desligamento.
+- 19/10, 19:09:25 UTC: item 1, só leitura: `findmnt /data`, estado de `docker` e `containerd`, `sudo docker info`.
+  - Resultado:
+    - O `/data` montou às 09:02:19 (`data.mount` ativa), antes do `docker.socket` (09:02:27) e das primeiras partidas do containerd (09:02:29) e do docker (09:02:30). Origem: a lun0, que hoje é o `/dev/sdb`; o disco do `/` hoje é o `/dev/sda`, o contrário de 16/10. UUID `3afbd359-…`, rótulo `data`, fs criado em 16/10/2026 às 20:50:13, estado `clean`, 1 montagem.
+    - O containerd está em laço de falha desde o boot, com `containerd: mkdir /var/lib/containerd: file exists`: o link aponta para `/data/containerd`, que não existe no fs novo. Foram 6.936 reinícios até 19:09. O docker também está em laço: espera 1 min pelo containerd e cai com `failed to start daemon: failed to get containerd plugins`. Foram 578 reinícios até 19:09. A previsão de 16/10 era inferência; agora está confirmada.
+    - `sudo docker info`: sem resposta em 20 s (rc=124).
+    - O `/data` não está vazio. Além do `lost+found`, tem o esqueleto que o dockerd cria a cada tentativa, em `/data/docker` (root:root 710): 11 entradas, 2 arquivos (`engine-id` e `volumes/metadata.db`, 32.804 bytes) e 1 nó de bloco (`volumes/backingFsBlockDev`); 0 containers, 0 volumes e 0 imagens. `df`: `/data` com 84K de 503G; `/` com 22G de 29G (78%).
+    - Socket do Docker hoje: `root:docker 660` (`SocketGroup=docker`). Em 16/10, estava com o grupo `systemd-journal`.
+    - Journal: 560,3M.
+  - Divergência do registrado: a previsão de 16/10 era um `/data` "novo e vazio", e a porta dura do 5.6 exigia só `lost+found`. O que há a mais é o esqueleto do dockerd. Pergunta ao Pedro.
+- 19/10, 19:16:55 UTC: processos, só leitura. Há 0 processos com cwd em `~/Pathsolutions_V2` e 0 arquivos abertos nele. Esta sessão roda no servidor do Antigravity, na janela aberta em `~/pathsolutions-v3` às 18:50. São 14 processos, entre eles 1 `codex` da extensão ChatGPT, iniciado às 18:51, com cwd `/home/azureps`.
+- 19/10, 19:18 UTC: inventário do item 9, só leitura (tamanho, dono, data mais nova e arquivos abertos):
+  - base:
+    - `~/Pathsolutions_V2`: 238M, 15.960 entradas, mais nova de 16/10 20:17;
+    - `/mount`: só tem `stpathsolutionsdata001`, com 6,7G e 162 entradas, de 02/06 ou antes, no disco de SO;
+    - `~/.git-credentials`: 1 linha, host `https://github.com`;
+    - Gemini `pathsolutions-v2`: `tmp` com 760K e `history` com 184K, de 16/09. O `projects.json` liga `/home/azureps/Pathsolutions_V2` a `pathsolutions-v2`, e é a única entrada;
+    - `credential.helper` global: `store`.
+  - sobras:
+    - `~/pathsolutions.bundle`: 6,5M;
+    - `~/deploy_pendente`: 12K;
+    - `~/.azcopy`: 20K;
+    - `~/.cache/claude-cli-nodejs/-home-azureps-Pathsolutions-V2`: 3,5M;
+    - `~/.docker/buildx`: 364K;
+    - `/root/.docker`: 576K;
+    - `/var/log/nginx`: 30 arquivos, 832K, rotacionados pelo logrotate no boot das 09:02; o nginx continua inactive/disabled;
+    - o alias `dcv` na linha 120 do `~/.bashrc`;
+    - o `/tmp/claude-1000/-home-azureps-Pathsolutions-V2` não existe mais, porque o `/tmp` foi limpo no reinício.
+  - sensíveis:
+    - `/root/.azure`: 152K;
+    - `~/.claude/projects/-home-azureps-Pathsolutions-V2`: 88M, mais nova de 16/10 20:45;
+    - `~/.claude/projects/-home-paths-Pathsolutions-V2`: vazia;
+    - `~/.gemini/antigravity`: 468K, de maio;
+    - `~/.gemini/antigravity-ide`: 23M;
+    - `oauth_creds.json` e `google_accounts.json`: de 15/09.
+  - Divergência do registrado: em 16/10, o `antigravity-ide` constava como de 15/09. Hoje, às 18:51 e 18:52, o language server da janela atual do Antigravity gravou nele (`crashes/` e `implicit/`), e tem 1 arquivo aberto. O resto (`conversations`, `brain`, `knowledge` e outros) é de maio a setembro. Pergunta ao Pedro.
+- 19/10, 19:21 UTC: Azure, só leitura. Subscrição `bd87a1ca-…` confirmada. O grupo `rg-prod-brsouth-001` tem 27 recursos, os mesmos da Fase 0, e não há locks.
+  - Órfãos:
+    - `pe-stpathsolutionsdata001-file`: `Succeeded`, conexão `Disconnected` com a `stpathsolutionsdata001`, que não existe (`ResourceNotFound`). Tem 1 NIC (`…nic.9b6d5aa7…`, 10.0.0.6, sem VM) e nenhum dns-zone-group. É o único private endpoint da subscrição.
+    - `privatelink.file.core.windows.net`: 2 registros, o SOA e um A `stpathsolutionsdata001` → 10.0.0.6, o IP da NIC do endpoint. Tem 1 link, `axi3rxmfnch4o`, com a `vnet-prod-brsouth-001`, sem autorregistro. É a única zona DNS privada.
+    - Runbooks `AzureAutomationTutorialWithIdentity` e `…Graphical`: `Published` desde 16/06/2026, sem agenda, sem webhook e sem job (os 21 jobs da conta são do `TurnOn-VMs`).
+    - `azurevm` (`Microsoft.Web/connections`): `Error` desde a criação, em 13/06/2026. É a única API connection, e a subscrição tem 0 Logic Apps.
+  - Passo 3: a `stpathsolutionsblob001` ainda existe (`Succeeded`, às 19:23).
+- 19/10, 20:43:48 UTC: decisões do Pedro no chat:
+  - porta dura do 5.6: aceitar o `lost+found` vazio e o esqueleto exato do dockerd em `/data/docker`; qualquer outra coisa no `/data` para o script;
+  - `~/.gemini/antigravity-ide`: fica hoje. Saem os outros três itens do resto do `~/.gemini` (`antigravity`, `oauth_creds.json` e `google_accounts.json`);
+  - o `codex` da extensão ChatGPT da janela atual continua rodando, e o fato vai para o relatório.
+- 19/10, 20:43:48 UTC: os scripts dos itens 2, 3 e 5 de hoje estão em revisão independente, só leitura, com 3 revisores. As portas de leitura dos três já foram testadas contra o estado real. O teste pegou um falso positivo no 6.2 (`False` em vez de `false`), já corrigido.
+- 19/10, 20:47:01 UTC: correção do registro de 15/10: o push do passo 1 (`git push origin --all` e `--tags`) rodou às 20:36:17 UTC, depois da decisão das 20:36:10, e não às 20:33, como está na linha de 15/10. A fonte é o horário da chamada na transcrição daquela sessão.
+- 19/10, 20:48:25 UTC: VM1, passo 5.2 de novo, como prevê a retomada da skill: `systemctl stop docker.socket docker.service containerd.service` e `systemctl mask --runtime` das três.
+  - Resultado: docker.socket=inactive docker.service=failed containerd.service=inactive ; as três estão mascaradas em runtime. Nenhum processo usa o `/data`, e não há submontagens.
+- 19/10, 20:49:05 UTC: VM1, passo 5.6: `udevadm settle`, `findmnt --verify --verbose`, `mount -a` e porta dura (modo `aceitar`). Leitura corrigida: rc=0, resumo "Success" ou "0 parse errors, 0 errors", e nenhum [E] ou [W] na seção do `/data`.
+  - Resultado: `findmnt --verify`: '0 parse errors, 0 errors, 1 warning' (rc=0), sem [E] nem [W] no `/data`; avisos fora dele:  [W] non-bind mount source /swapfile is a directory or regular file;. O `mount -a` não mudou nada. Porta dura: `/dev/sdb` (lun0) no `/data`, UUID esperado, `data.mount` ativa, fs de Fri Oct 16 20:50:13 2026, 1 MB usados, só o `lost+found` vazio e o esqueleto do dockerd em `/data/docker`, sem containers, imagens nem volumes.
+- 19/10, 20:49:05 UTC: VM1, passo 5.7: `install -d -o root -g root -m 700 /data/containerd` e `install -d -o root -g root -m 710 /data/docker`.
+  - Resultado: /data/containerd root:root 700;/data/docker root:root 710; o link `/var/lib/containerd` → `/data/containerd` resolve para `/dev/sdb`.
+- 19/10, 20:49:05 UTC: VM1, passo 5.8: `systemctl unmask --runtime`, `reset-failed` e `start` de containerd.service, docker.socket e docker.service; `sudo docker info` comparado com o registro do 5.1.
+  - Resultado: as três units estão ativas, e o `docker info` saiu igual ao do 5.1 (`/data/docker|overlayfs|[["driver-type","io.containerd.snapshotter.v1"]]|io.containerd.runc.v2,runc,|runc`). 0 containers, 0 imagens e 0 volumes. `/data/containerd` com 10 entradas criadas pelo containerd. Socket `root:docker 660`. df:/ 29G 22G 6.2G 78%;/data 503G 316K 478G 1%; Passo 5 do `/data` na VM1 concluído.
+- 19/10, 21:18:10 UTC: resultado da revisão independente (3 revisores, só leitura, de 20:40 a 21:11):
+  - Passo 5: o 5.2 a 5.8 rodou de 20:48:25 a 20:49:07, antes do fim da revisão. Foi decisão minha, porque o modo `aceitar` não apaga nada. A conferência feita depois não achou problema. Efeitos fora do `/data`:
+    - o `daemon-reload` do `mask` disparou o `apt-daily` (de 20:49:05 a 20:49:06), sem pacote alterado: o `dpkg.log` não tem linha de 19/10;
+    - o dockerd criou a interface `docker0` (DOWN) e ligou o `ip_forward`, que é o padrão do Docker.
+    - O "`mount -a` não mudou nada" tem esta evidência: o fstab já estava todo montado, e o journal não tem evento de montagem entre 20:49:05.717 e 20:49:05.741.
+  - Item 9: sem bloqueador. A revisão achou uma divergência do registrado: `~/.claude/projects/-home-paths-Pathsolutions-V2` não está vazia, como registrei às 19:18; tem um link `memory` → `~/pathsolutions-claude-context/memory`. Achou também o comentário `# Atalho PathSolutions` na linha 119 do `~/.bashrc`, logo acima do alias. Entraram no script mais portas:
+    - itens que ficam, inclusive os destinos dos links;
+    - arquivos abertos em todos os alvos;
+    - `nginx` disabled;
+    - `sudo -n` funcionando;
+    - stderr das exclusões de pastas com lâminas fora da transcrição.
+  - Passo 6: sem bloqueador. Ajustes:
+    - pausa de 10 s entre releituras do ARM;
+    - contagem final: ficam 19 recursos, mais a storage account do passo 3 enquanto ela existir;
+    - conferência da agenda do `TurnOn-VMs` e da sub-rede depois das exclusões;
+    - nomes comparados sem diferença de caixa;
+    - execução com limite de 10 min.
+- 19/10, 21:18:10 UTC: decisões do Pedro no chat:
+  - apagar a pasta `-home-paths-Pathsolutions-V2` com o link; o destino fica, conferido antes e depois;
+  - tirar do `~/.bashrc` as linhas 119 (comentário) e 120 (alias `dcv`).
+- 19/10, 21:19:52 UTC: VM1, item 9: pré-condições, só leitura.
+  - Resultado: os 29 itens que ficam existem. 0 processos com cwd em `~/Pathsolutions_V2` e 0 arquivos abertos nos 18 alvos (o `antigravity-ide` fica de fora e fica). O head do bundle (`1316dec4f`) está em 13 branches do remoto, e os 2 scripts do `deploy_pendente` estão em `origin/legado-final/sobras` (hash git). `.git-credentials`: 1 linha, `https://github.com`. nginx inactive/disabled. O `/tmp` do `Pathsolutions_V2` não existe. df antes: / 29G 22G 6.2G 78%.
+- 19/10, 21:19:56 UTC: VM1, item 9.1: `sudo rm -rf --one-file-system /home/azureps/Pathsolutions_V2` (238M).
+  - Resultado: removido.
+- 19/10, 21:19:56 UTC: VM1, item 9.2: `sudo rm -rf --one-file-system /mount/stpathsolutionsdata001` e `sudo rmdir /mount` (6.7G: 79 .json, 62 .npy, 17 .svs; dados do legado, de maio e junho, sem exportação).
+  - Resultado: `/mount` removido.
+- 19/10, 21:19:56 UTC: VM1, item 9.3: `rm ~/.git-credentials` (1 linha, `https://github.com`; o Pedro revogou o token em 15/10).
+  - Resultado: removido.
+- 19/10, 21:19:56 UTC: VM1, item 9.4: `rm -rf ~/.gemini/tmp/pathsolutions-v2 ~/.gemini/history/pathsolutions-v2` (760K e 184K).
+  - Resultado: removidos.
+- 19/10, 21:19:57 UTC: VM1, item 9.5, ação separada: `git config --global --unset credential.helper` (era `store`).
+  - Resultado: sem `credential.helper` global nem de sistema; a próxima credencial por HTTPS não é gravada em texto puro.
+- 19/10, 21:19:57 UTC: VM1, item 9.6 (sobras): `rm ~/pathsolutions.bundle` (6.5M) e `rm -rf ~/deploy_pendente` (12K).
+  - Resultado: removidos.
+- 19/10, 21:19:57 UTC: VM1, item 9.7 (rastros): `rm -rf ~/.azcopy ~/.cache/claude-cli-nodejs/-home-azureps-Pathsolutions-V2 ~/.docker/buildx`, `sudo rm -rf /root/.docker`, as linhas 119 (`# Atalho PathSolutions`) e 120 (alias `dcv`) do `~/.bashrc` e a entrada `pathsolutions-v2` do `~/.gemini/projects.json`.
+  - Resultado: removidos. O `~/.bashrc` ficou com 118 linhas, sem `dcv` e com sintaxe válida (`bash -n`); o `projects.json` ficou com `{"projects": {}}`.
+- 19/10, 21:19:57 UTC: VM1, item 9.8: `sudo find /var/log/nginx -xdev -mindepth 1 -delete` (30 arquivos, 832K), mantendo a pasta. O nginx continua inactive/disabled.
+  - Resultado: pasta vazia, `root:adm 755`.
+- 19/10, 21:19:57 UTC: VM1, item 9.9 (sensíveis): `sudo rm -rf /root/.azure` (152K); `rm -rf ~/.claude/projects/-home-azureps-Pathsolutions-V2` (88M) e `~/.claude/projects/-home-paths-Pathsolutions-V2` (só o link `memory` → `~/pathsolutions-claude-context/memory`; o destino fica); `rm -rf ~/.gemini/antigravity` (468K); `rm ~/.gemini/oauth_creds.json ~/.gemini/google_accounts.json`; o `~/.gemini/antigravity-ide` fica, por decisão do Pedro em 19/10.
+  - Resultado: removidos; `antigravity-ide` mantido.
+- 19/10, 21:19:58 UTC: VM1, fim do item 9: os itens que ficam continuam lá. Erros das exclusões: 0. df do `/`: antes / 29G 22G 6.2G 78%; depois / 29G 15G 14G 53%.
+- 19/10, 21:22:09 UTC: VM1, item 10: df antes e depois e estado final (só leitura).
+  - df: em 16/10 às 20:49 (antes do passo 5), `/` com 22G de 29G (77%) e `/data` com 477G de 503G (100%). Agora, `/` com 15G de 29G (53%) e `/data` com 332K de 503G (1%).
+  - Docker: 0 containers, 0 imagens, 0 volumes e 0 de cache de build. containerd, `docker.socket` e docker estão active/enabled, com 0 reinícios desde a religação. O socket está `root:docker 660`.
+  - Legado: 0 unit files com `pathsol`, `hibou`, `inference`, `aznfs` ou `legado`; 0 units em falha. O único timer que casa com `backup` é o `dpkg-db-backup.timer`, do Ubuntu. Crontabs do `azureps` e do root com 0 linhas ativas. nginx e `certbot.timer` estão inactive/disabled, com os pacotes instalados; o `aznfs` está em `deinstall ok config-files`. Nenhuma pasta do legado no disco de SO, e `credential.helper` vazio.
+  - Portas TCP em escuta:
+    - 22 (sshd);
+    - 53 (systemd-resolved, só local);
+    - 111 (`rpcbind`, em todas as interfaces; o pacote é de 05/05/2026);
+    - portas altas só em 127.0.0.1, do servidor e do language server do Antigravity.
+    - No NSG, a 111 não tem regra de entrada vinda da Internet.
+  - O NSG tem 3 regras de entrada só do legado: 8001, 6379 e 5432, entre as VMs. Tem também 80 e 443 abertas para qualquer origem, mas nada escuta nelas.
+  - Journal: 568,3M.
+- 19/10, 21:22:09 UTC: passo 5 concluído na VM1. Commit e push deste registro.
