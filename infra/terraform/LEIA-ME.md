@@ -22,8 +22,8 @@ az account show --query id -o tsv   # bd87a1ca-e4f5-460b-9f12-c89e114293f1, sen�
 
 ```
 cd ~/pathsolutions-v3/infra/terraform/<bloco>
-sha256sum <bloco>.tfplan            # igual ao do relatório
-terraform apply <bloco>.tfplan
+sha256sum <plano>.tfplan            # nome e hash no relatório da fase
+terraform apply <plano>.tfplan
 ```
 
 Se o plano estiver velho (o estado mudou depois dele), o Terraform recusa; nesse caso, pare e peça um plano novo.

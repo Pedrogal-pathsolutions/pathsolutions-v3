@@ -8,6 +8,15 @@ provider "azurerm" {
   features {}
 }
 
+# Same rule as azurerm. Registering resource providers is a subscription write,
+# so it stays out of the apply.
+provider "azapi" {
+  subscription_id            = "bd87a1ca-e4f5-460b-9f12-c89e114293f1"
+  use_cli                    = true
+  use_msi                    = false
+  skip_provider_registration = true
+}
+
 locals {
   location = "brazilsouth"
   tags = {

@@ -10,7 +10,8 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 1. Decisão 4 antes do primeiro apply | feita: codex desinstalado, applies do Pedro pelo SSH com o Antigravity fechado e `az logout` no fim do dia |
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10) e o teste do action group |
-| 4 a 8 | não começadas |
+| 4. Storage e alertas | em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava, com o plano salvo e esperando o apply. B, depois de conferido o A: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas (inclusive os de activity log) e a política de ciclo de vida da decisão 1 |
+| 5 a 8 | não começadas |
 
 ## O que foi feito
 
@@ -26,6 +27,27 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 8. Código do orçamento e do action group em `infra/terraform/main/`, com o e-mail numa variável `sensitive` e o valor em `terraform.tfvars`, fora do git. Plano salvo (`main.tfplan`).
 9. O Pedro aplicou o `main.tfplan` pelo SSH (~01:51 UTC). Conferência: `terraform plan` sem mudanças; action group e orçamento com os atributos do plano. O teste de notificação do action group não foi rodado.
 10. `az logout` no fim do dia de Terraform (decisão 4). A próxima sessão que precisar do `az` depende de o Pedro entrar de novo.
+
+### Sessão 2 (27/10, a partir das ~02:00 UTC)
+
+1. O Pedro entrou no `az` e pediu a fatia 4 em dois applies: primeiro a conta de WSI com retenção legal, papéis e trava; depois o resto.
+2. Provider azapi 2.13.0 (de 28/09/2026) fixado em `main/versions.tf`: o azurerm não tem recurso de retenção legal (plano, seções 6.4 e 21). Assinado pela chave de parceiro 6F0B91BDE98478CF, a mesma que o registro publica para essa versão. Ele também usa só o login do `az` e não registra providers.
+3. Respostas do Pedro (27/10): containers só para `diagnose` e `publico` (o que a Fase 4 usa). Micra e Dr. Eugênio entram num plano próprio, antes do primeiro upload de cada um. O papel sem exclusão nasce sem atribuição: a VM1 o recebe quando o script do operador precisar (Fase 4) ou no teste de proteção (fatia 8); a VM2, na fatia 6, junto com a identidade.
+4. Código do apply A em `main/wsi.tf`. Plano salvo (`wsi.tfplan`).
+
+## Plano da fatia 4, apply A (WSI)
+
+`terraform plan -out=wsi.tfplan` em 27/10, 02:12 UTC: **7 a criar, 0 a alterar, 0 a destruir.** O orçamento e o action group aparecem sem mudança, e nenhum recurso existente (VM1, VM2, discos, rede) aparece no plano. sha256 do plano: `22017a972368a6f32f5ab6e1b65319d14bc821ab7637f7498bb42ed2198b3dd3`.
+
+| Recurso | O quê | Custo/mês |
+|---|---|---:|
+| `azurerm_storage_account.wsi` | `pathsolwsiv3`: StorageV2, Standard **ZRS**, Hot, TLS 1.2, chave compartilhada desligada, sem acesso público a blobs, sem soft delete (vem no MVP), `prevent_destroy` | R$ 0 vazia; depois, por GiB (Hot ZRS R$ 0,212691; plano, seção 24) |
+| `azurerm_storage_container.wsi` × 2 | `wsi-diagnose` e `wsi-publico`, privados, `prevent_destroy` | R$ 0 |
+| `azapi_resource_action.wsi_legal_hold` × 2 | `setLegalHold` em cada container, tag `decisao1`, `allowProtectedAppendWritesAll = false` | R$ 0 (plano, seção 6.4) |
+| `azurerm_management_lock.wsi` | CanNotDelete na conta | R$ 0 |
+| `azurerm_role_definition.blob_sem_exclusao` | `pathsol-blob-sem-exclusao-v3`, atribuível só em `rg-pathsol-v3`: lista containers, pede chave de delegação, lê, grava e acrescenta blobs; sem excluir, mover, apagar versão nem agir como superusuário da imutabilidade | R$ 0 |
+
+**Entre os dois applies,** a retenção legal já vale, mas o alerta de `clearLegalHold` só nasce no apply B. Nenhum upload acontece antes da Fase 4, então essa janela não tem dado.
 
 ## Plano do bootstrap
 
@@ -79,17 +101,26 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | `az monitor action-group show` | `pathsol-alertas-v3`, enabled, `pathsolv3`, 1 receptor de e-mail com status Enabled, no domínio da empresa, 3 tags |
 | GET do orçamento (`Microsoft.Consumption/budgets`, api 2023-11-01) | R$ 5.000 mensal, BRL, de 01/10/2026 a 01/10/2036; 4 avisos ativos, 1 e-mail cada, nenhum grupo; gasto 0,0 logo depois da criação |
 | `az monitor activity-log list -g rg-pathsol-v3 --offset 1h` | escritas do bootstrap às 01:37–01:38 e do action group às 01:51 UTC; `listKeys` na conta do estado às 01:38:03 (apply) e 01:46:57 (plan); nenhum teste de notificação |
+| `az account show` (sessão 2) | mesma subscrição, Enabled, login de usuário |
+| `az storage account check-name -n pathsolwsiv3`; `az role definition list --custom-role-only` | nome livre; nenhum papel personalizado na subscrição |
+| `az provider show -n Microsoft.Storage` | Brazil South com as zonas 1, 2 e 3; `blobServices` até a API 2026-09-01 |
+| registro do Terraform (`Azure/azapi`) | 2.13.0 de 28/09/2026; zip linux_amd64 `bbe4a395…1b70`, igual ao hash `zh:` do lockfile; chave 6F0B91BDE98478CF |
+| `terraform init`; `fmt -check`; `validate` | azapi v2.13.0 instalado; formato ok; `The configuration is valid` |
+| `terraform show -json wsi.tfplan` | os atributos da tabela do apply A; o corpo do `setLegalHold`; as 3 ações de dados e as 2 de controle do papel |
+| `az storage account blob-service-properties show -n pathsoltfstatev3` | soft delete de blob e de container desligados: a conta de WSI, criada pelo mesmo caminho sem `delete_retention_policy`, deve nascer igual (conferir depois do apply) |
 
 ## O que não foi possível verificar
 
 - Se o e-mail do orçamento chega. O orçamento foi criado nesta subscrição CSP, em BRL; o primeiro aviso esperado é o de 50%.
 - Se o action group entrega e-mail: o teste de notificação não foi rodado.
+- Apply A, até ser aplicado e conferido: se o `setLegalHold` pelo azapi deixa `hasLegalHold = true` nos dois containers e se a conta nasce sem soft delete.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
 
 - **Login do `az` só durante o Terraform.** Até 27/10, o login do Pedro, com Owner, ficava aberto entre as sessões. Desde o `az logout` desse dia, cada sessão que precisar do `az`, inclusive para leitura, depende de o Pedro entrar de novo.
 - **Chaves das contas no estado do Terraform.** O azurerm chama `listKeys` em cada plan e apply, mesmo com a chave compartilhada desligada, e grava as chaves no estado. Elas só valem se alguém religar a chave compartilhada, o que exige escrita no plano de controle (Owner ou Contributor). As contas de dados da fatia 4 seguem o mesmo caminho. Os alertas de activity log da fatia 4 precisam distinguir esse `listKeys` do Terraform de um uso indevido.
+- **A gravação de blob inclui a troca de camada.** O Set Blob Tier exige `blobs/write` (learn.microsoft.com, página da operação Set Blob Tier, lida em 27/10), e o papel sem exclusão precisa dessa ação. Uma identidade com o papel poderia mudar a camada de uma WSI à mão; a regra (`CLAUDE.md`, storage da v3) deixa isso só para o ciclo de vida, então o código das Fases 4 e 5 não pode chamar Set Blob Tier. Mudar a camada não altera a WSI.
 - **Auto-shutdown e decisão 3.** Mudar o da VM1 para 23:00 durante uma sessão noturna derruba a sessão às 23:00 do mesmo dia: hoje a VM1 já passou das 20:00 e só desliga às 20:00 de amanhã. A mudança fica para a fatia 6, num horário de dia.
 
 ## Decisões pedidas ao Pedro
