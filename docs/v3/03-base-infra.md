@@ -9,9 +9,9 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 0. Exportação de teste do Motic | não chegou; nada a fazer até ela chegar |
 | 1. Decisão 4 antes do primeiro apply | feita: codex desinstalado, applies do Pedro pelo SSH com o Antigravity fechado e `az logout` no fim do dia |
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
-| 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10) e a confirmação de que o e-mail do action group chega (três disparos reais em 27/10, 11:54 UTC) |
+| 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
-| 5. Primeira partida da VM2 e discos | código e plano dos discos salvos (`discos.tfplan`), esperando o apply; depois dele, a troca dos discos e a primeira partida da VM2, uma ação por autorização |
+| 5. Primeira partida da VM2 e discos | discos aplicados pelo Pedro (12:48 UTC) e conferidos. VM1: passos 1 a 3 feitos (P10 no `/data`, Docker de pé, P20 desanexado); a exclusão do P20 é pedida depois da partida de 28/10, com o `/data` e o Docker conferidos. VM2: passos 5 a 9 em andamento. Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
 | 6 a 8 | não começadas |
 
 ## O que foi feito
@@ -50,6 +50,14 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 3. Primeiros disparos reais: às 11:54:09 e 11:54:10 UTC, ~6 min depois das operações, o `pathsol-lifecycle-write-v3` (política de ciclo de vida) e o `pathsol-storage-write-v3`, duas vezes (criação da `pathsoldlqv3` e da `pathsolstatusv3`). Se os três e-mails chegaram não foi verificado; se chegaram, também provam a entrega do action group.
 4. Achados do activity log: (a) a iniciativa padrão do Defender for Cloud (`SecurityCenterBuiltIn`) auditou as contas novas (sem regra de rede virtual, sem private link) e o Key Vault (sem proteção contra purga, sem firewall, sem private endpoint). É só auditoria, e são escolhas do plano (riscos). (b) O azurerm chamou `workspaces/sharedKeys/action` duas vezes: as chaves do Log Analytics também vão para o estado.
 5. Fatia 5: levantamento só de leitura da VM1 e dos discos atuais; código em `main/discos.tf`; plano salvo (`discos.tfplan`).
+
+### Sessão 5 (27/10, a partir das ~12:50 UTC)
+
+1. O Pedro aplicou o `discos.tfplan` (12:48 UTC), confirmou que os e-mails dos três alertas de 11:54 UTC chegaram (o action group entrega) e que a mudança no `default-allow-ssh` às 11:42 UTC foi dele. Autorizou os 9 passos da fatia 5 com duas condições: o congelamento de kernel e driver (padrão 11) é a primeira ação na primeira partida da VM2; e a exclusão do P20 e do P15 só é pedida depois de a VM reiniciar, com o `/data` no disco novo e o Docker de pé.
+2. Conferência do apply: sha256 do plano igual ao do relatório, `terraform plan` sem mudanças e os dois discos com os atributos do plano.
+3. VM1, passos 1 a 3 (registro em `docs/operacao/2026-10-27-discos-fatia5.md`): P10 anexado com a VM ligada (lun1, ReadOnly); `/data` no P10 (ext4 `-m 0`, rótulo `dados-vm1-v3`), com o esqueleto do Docker e do containerd copiado e conferido, o UUID trocado no fstab e `RequiresMountsFor=/data` no containerd e no docker; `docker info` igual ao de antes; P20 desanexado e `Unattached`. No detach, o kernel registrou uma falha de SYNCHRONIZE CACHE no disco já retirado (o fs estava desmontado desde 14:09:10); o Pedro mandou seguir.
+4. Respostas do Pedro (~21:07 UTC): no passo 8, desalocar e ligar a VM2 de novo, em vez de reiniciar; a VM1 reinicia na partida de 28/10, pelo runbook.
+5. A trava do `.claude/settings.json` nega `az disk delete` à sessão: as duas exclusões ficam com o Pedro.
 
 ## Plano da fatia 5 (discos)
 
@@ -224,10 +232,9 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 ## O que não foi possível verificar
 
 - Se o e-mail do orçamento chega. O orçamento foi criado nesta subscrição CSP, em BRL; o primeiro aviso esperado é o de 50%.
-- Se o action group entrega e-mail: os três disparos de 27/10, 11:54 UTC, passaram por ele, mas a chegada depende da resposta do Pedro.
 - Se uma tentativa negada aparece no activity log como Failed e dispara o alerta, e se o alerta de `QueueMessageCount` dispara com uma contagem diária (fatia 8).
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
-- Se anexar um disco de outro grupo com a VM1 ligada funciona (passo 1 depois do apply da fatia 5), e o estado da VM2 por dentro desde 15/10.
+- O estado da VM2 por dentro desde 15/10. Anexar um disco de outro grupo com a VM1 ligada funcionou em 27/10 (sessão 5).
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
 - Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Fica para os testes da fatia 8.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
@@ -244,4 +251,4 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 
 ## Decisões pedidas ao Pedro
 
-Nenhuma até aqui. Pergunta, sem bloqueio: os três e-mails dos alertas de 27/10, 11:54 UTC (08:54 de Brasília), chegaram?
+Nenhuma até aqui.
