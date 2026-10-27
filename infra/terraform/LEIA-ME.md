@@ -41,3 +41,7 @@ terraform state list                # os 5 recursos, lidos da conta nova
 ```
 
 Se o `init` falhar com 403 (`AuthorizationPermissionMismatch`), o papel de dados ainda está propagando: espere de 2 a 5 minutos e repita o `init`.
+
+## Variáveis do `main/`
+
+O e-mail dos alertas fica em `main/terraform.tfvars` (`alert_email = "..."`), fora do git, e é `sensitive` no código. O arquivo `.tfplan` guarda o valor em texto claro: também fica fora do git.
