@@ -7,9 +7,9 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | Fatia | Situação |
 |---|---|
 | 0. Exportação de teste do Motic | não chegou; nada a fazer até ela chegar |
-| 1. Decisão 4 antes do primeiro apply | feita: codex desinstalado e apply do Pedro pelo SSH, com o Antigravity fechado; falta o `az logout` no fim do dia |
+| 1. Decisão 4 antes do primeiro apply | feita: codex desinstalado, applies do Pedro pelo SSH com o Antigravity fechado e `az logout` no fim do dia |
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
-| 3. Orçamento e action group | plano salvo, aguardando o apply do Pedro |
+| 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10) e o teste do action group |
 | 4 a 8 | não começadas |
 
 ## O que foi feito
@@ -24,6 +24,8 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 6. O Pedro desinstalou o codex, fechou o Antigravity e, pelo SSH, aplicou o `bootstrap.tfplan` e migrou o estado (~01:40 UTC).
 7. Conferência do bootstrap: os 5 recursos existem, com os atributos do plano; o estado remoto tem a mesma linhagem e os mesmos recursos da cópia local que o `init -migrate-state` deixou (serial 7 no remoto, 6 na cópia). A cópia local guardava as chaves da conta. A pedido do Pedro, ela foi apagada depois de conferidos o `.gitignore` (`*.tfstate`, fora do git) e os 5 recursos gerenciados no estado remoto; em seguida, `terraform plan` do bootstrap respondeu `No changes`.
 8. Código do orçamento e do action group em `infra/terraform/main/`, com o e-mail numa variável `sensitive` e o valor em `terraform.tfvars`, fora do git. Plano salvo (`main.tfplan`).
+9. O Pedro aplicou o `main.tfplan` pelo SSH (~01:51 UTC). Conferência: `terraform plan` sem mudanças; action group e orçamento com os atributos do plano. O teste de notificação do action group não foi rodado.
+10. `az logout` no fim do dia de Terraform (decisão 4). A próxima sessão que precisar do `az` depende de o Pedro entrar de novo.
 
 ## Plano do bootstrap
 
@@ -73,15 +75,21 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | `.terraform/terraform.tfstate` do bootstrap | backend `azurerm`, `use_cli true`, `use_msi false`, `use_azuread_auth true` |
 | `terraform state pull` contra a cópia local | mesma linhagem e mesmos recursos; serial 7 contra 6 |
 | `terraform show -json main.tfplan` | 4 avisos (50, 80 e 100 Actual; 100 Forecasted), `GreaterThanOrEqualTo`, 1 e-mail cada, no domínio da empresa |
+| `terraform plan` do `main/` depois do apply | `No changes` |
+| `az monitor action-group show` | `pathsol-alertas-v3`, enabled, `pathsolv3`, 1 receptor de e-mail com status Enabled, no domínio da empresa, 3 tags |
+| GET do orçamento (`Microsoft.Consumption/budgets`, api 2023-11-01) | R$ 5.000 mensal, BRL, de 01/10/2026 a 01/10/2036; 4 avisos ativos, 1 e-mail cada, nenhum grupo; gasto 0,0 logo depois da criação |
+| `az monitor activity-log list -g rg-pathsol-v3 --offset 1h` | escritas do bootstrap às 01:37–01:38 e do action group às 01:51 UTC; `listKeys` na conta do estado às 01:38:03 (apply) e 01:46:57 (plan); nenhum teste de notificação |
 
 ## O que não foi possível verificar
 
-- Se o orçamento aceita ser criado nesta subscrição CSP (o plano diz que nunca foi testado) e se o e-mail dele chega.
+- Se o e-mail do orçamento chega. O orçamento foi criado nesta subscrição CSP, em BRL; o primeiro aviso esperado é o de 50%.
+- Se o action group entrega e-mail: o teste de notificação não foi rodado.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
 
-- **Login do `az` ativo o tempo todo na VM1.** Hoje o login do Pedro, com Owner, fica aberto entre as sessões. A decisão 4 limita o login ao plan e ao apply, com `az logout` no fim. Depois do primeiro dia de Terraform, cada sessão que precisar do `az` depende de o Pedro entrar de novo.
+- **Login do `az` só durante o Terraform.** Até 27/10, o login do Pedro, com Owner, ficava aberto entre as sessões. Desde o `az logout` desse dia, cada sessão que precisar do `az`, inclusive para leitura, depende de o Pedro entrar de novo.
+- **Chaves das contas no estado do Terraform.** O azurerm chama `listKeys` em cada plan e apply, mesmo com a chave compartilhada desligada, e grava as chaves no estado. Elas só valem se alguém religar a chave compartilhada, o que exige escrita no plano de controle (Owner ou Contributor). As contas de dados da fatia 4 seguem o mesmo caminho. Os alertas de activity log da fatia 4 precisam distinguir esse `listKeys` do Terraform de um uso indevido.
 - **Auto-shutdown e decisão 3.** Mudar o da VM1 para 23:00 durante uma sessão noturna derruba a sessão às 23:00 do mesmo dia: hoje a VM1 já passou das 20:00 e só desliga às 20:00 de amanhã. A mudança fica para a fatia 6, num horário de dia.
 
 ## Decisões pedidas ao Pedro
