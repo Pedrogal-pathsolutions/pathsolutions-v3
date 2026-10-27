@@ -11,7 +11,7 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
-| 5. Primeira partida da VM2 e discos | discos aplicados pelo Pedro (12:48 UTC) e conferidos. VM1: passos 1 a 3 feitos (P10 no `/data`, Docker de pé, P20 desanexado); a exclusão do P20 é pedida depois da partida de 28/10, com o `/data` e o Docker conferidos. VM2: passos 5 a 9 em andamento. Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
+| 5. Primeira partida da VM2 e discos | passos 1 a 8 feitos (27/10). VM1: `/data` no P10 e P20 desanexado; a exclusão do P20 é pedida depois da partida de 28/10, com o `/data` e o Docker conferidos. VM2: congelamento de kernel e driver como primeira ação, `/data` no P6, P15 desanexado, ciclo de desalocar e ligar com evidência limpa, VM2 desalocada. Passo 9: o Pedro respondeu que apagou o P15, mas às 22:34 UTC o disco ainda existia, sem `disks/delete` no activity log; a conferir. Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
 | 6 a 8 | não começadas |
 
 ## O que foi feito
@@ -58,6 +58,9 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 3. VM1, passos 1 a 3 (registro em `docs/operacao/2026-10-27-discos-fatia5.md`): P10 anexado com a VM ligada (lun1, ReadOnly); `/data` no P10 (ext4 `-m 0`, rótulo `dados-vm1-v3`), com o esqueleto do Docker e do containerd copiado e conferido, o UUID trocado no fstab e `RequiresMountsFor=/data` no containerd e no docker; `docker info` igual ao de antes; P20 desanexado e `Unattached`. No detach, o kernel registrou uma falha de SYNCHRONIZE CACHE no disco já retirado (o fs estava desmontado desde 14:09:10); o Pedro mandou seguir.
 4. Respostas do Pedro (~21:07 UTC): no passo 8, desalocar e ligar a VM2 de novo, em vez de reiniciar; a VM1 reinicia na partida de 28/10, pelo runbook.
 5. A trava do `.claude/settings.json` nega `az disk delete` à sessão: as duas exclusões ficam com o Pedro.
+6. VM2, passos 5 a 8: P6 anexado com a VM desalocada; na primeira partida (21:16 UTC), o congelamento foi a primeira ação: `apt-mark hold` em 48 pacotes do kernel e do driver 595.71.05, às 21:17:48, 33 min antes da execução marcada do `apt-daily-upgrade`. Depois, leitura, `/data` no P6 com o mesmo procedimento da VM1, P15 desanexado com a VM desalocada, partida de novo e evidência: só a lun1, `/data` montado antes do containerd e do docker, `docker info` e engine iguais, T4 com o driver 595.71.05, holds intactos. VM2 desalocada às 21:24:38; ligada por ~8 min no total.
+7. Passo 9: o Pedro respondeu "Apaguei o P15", mas a conferência das 22:34 UTC achou o disco `Unattached` e `Succeeded`, sem `disks/delete` no activity log. Parado ali, já depois do corte das 22:30 UTC.
+8. A sessão esperou aprovações de 12:57 a 14:03 e de 14:12 a 21:07 UTC; por isso a VM2 entrou já perto do auto-shutdown dela (22:00 UTC), com cortes de horário nos scripts.
 
 ## Plano da fatia 5 (discos)
 
@@ -234,7 +237,8 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se o e-mail do orçamento chega. O orçamento foi criado nesta subscrição CSP, em BRL; o primeiro aviso esperado é o de 50%.
 - Se uma tentativa negada aparece no activity log como Failed e dispara o alerta, e se o alerta de `QueueMessageCount` dispara com uma contagem diária (fatia 8).
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
-- O estado da VM2 por dentro desde 15/10. Anexar um disco de outro grupo com a VM1 ligada funcionou em 27/10 (sessão 5).
+- O boot da VM1 com o P10 no `/data` e sem o P20: fica para a partida de 28/10. Anexar um disco de outro grupo com a VM1 ligada funcionou em 27/10 (sessão 5).
+- Por que o P15 continuava existindo às 22:34 UTC, depois da resposta "Apaguei o P15".
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
 - Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Fica para os testes da fatia 8.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
@@ -243,7 +247,8 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 
 - **Login do `az` só durante o Terraform.** Até 27/10, o login do Pedro, com Owner, ficava aberto entre as sessões. Desde o `az logout` desse dia, cada sessão que precisar do `az`, inclusive para leitura, depende de o Pedro entrar de novo.
 - **Chaves das contas no estado do Terraform.** O azurerm chama `listKeys` em cada plan e apply, mesmo com a chave compartilhada desligada, e grava as chaves no estado. Elas só valem se alguém religar a chave compartilhada, o que exige escrita no plano de controle (Owner ou Contributor). As contas de dados da fatia 4 seguem o mesmo caminho. Os alertas de activity log da fatia 4 precisam distinguir esse `listKeys` do Terraform de um uso indevido. O mesmo vale para as chaves do Log Analytics (`workspaces/sharedKeys`), que não servem com a autenticação local desligada.
-- **Atualizações automáticas na primeira partida da VM2.** O `apt-daily-upgrade.timer` do Ubuntu tem `Persistent=true` e `RandomizedDelaySec=60m` (lidos na VM1; na VM2, não verificado). Depois de 11 dias desalocada, o `unattended-upgrades` pode rodar na primeira hora depois do boot, antes do congelamento de kernel e driver (padrão 11). Com o `nvidia-dkms`, cada kernel novo exige recompilar o módulo da GPU (`00-ambiente.md`:361). No passo 7 da fatia 5, a leitura vem primeiro; se o congelamento não puder esperar a fatia 6, ele vira uma ação própria, com autorização.
+- **Kernel e driver da VM2 em hold.** Os 48 pacotes só mudam numa janela de manutenção (padrão 11), com `apt-mark unhold`, atualização e checagem da GPU. Enquanto isso, as correções de segurança do kernel não entram na VM2. A extensão `NvidiaGpuDriverLinux` (handler 1.13.0.2 no disco; 1.9 no modelo, com atualização automática de versão menor) roda `enable` a cada partida (2 s, `Ready`, nas duas de 27/10); o que o script faz sem driver não foi lido.
+- **Chave de host da VM2 não conferida.** O alias `azure-foundation` do ssh tem `StrictHostKeyChecking false`, e cada conexão imprime "Permanently added": a VM1 não confere a chave de host da VM2 (já apontado na Fase 0).
 - **A gravação de blob inclui a troca de camada.** O Set Blob Tier exige `blobs/write` (learn.microsoft.com, página da operação Set Blob Tier, lida em 27/10), e o papel sem exclusão precisa dessa ação. Uma identidade com o papel poderia mudar a camada de uma WSI à mão; a regra (`CLAUDE.md`, storage da v3) deixa isso só para o ciclo de vida, então o código das Fases 4 e 5 não pode chamar Set Blob Tier. Mudar a camada não altera a WSI.
 - **Rede pública aberta nas contas, no Key Vault e no Log Analytics.** O que protege é a identidade: sem chave compartilhada, sem acesso anônimo (exceto o site do status, por desenho) e com retenção legal nas WSIs. Uma credencial do Entra ID vazada alcança o endpoint de qualquer rede.
 - **Alertas que disparam com o trabalho normal.** O `storage-write` dispara em todo apply que mude uma conta, e o `role-assignment` em toda atribuição de papel, inclusive as das próximas fatias. Cada um manda e-mail ao Pedro, que confere se o apply era dele.
@@ -251,4 +256,4 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 
 ## Decisões pedidas ao Pedro
 
-Nenhuma até aqui.
+Nenhuma decisão. Pergunta que bloqueia o passo 9: o `az disk delete` do P15 rodou? Às 22:34 UTC o disco seguia `Unattached` e `Succeeded`, sem `disks/delete` no activity log desde 21:20. A próxima sessão confere de novo antes de qualquer outra coisa.

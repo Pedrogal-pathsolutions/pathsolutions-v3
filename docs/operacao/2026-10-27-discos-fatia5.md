@@ -53,3 +53,50 @@ Os passos são os 9 da seção "Plano da fatia 5 (discos)" do `docs/v3/03-base-i
   - seguir para a VM2;
   - no passo 8, em vez de reiniciar, desalocar e ligar de novo, que é o ciclo real da VM2; só depois mostrar o `/data` e o Docker e pedir a exclusão do P15;
   - a VM1 reinicia na partida de amanhã, pelo runbook; a sessão seguinte mostra o `/data` e o Docker e pede a exclusão do P20.
+- 21:12 UTC: horário real conferido (a sessão esperou aprovações de 14:12 a 21:07). Auto-shutdown: VM2 às 19:00 de Brasília (22:00 UTC) e VM1 às 20:00 (23:00 UTC), ambos Enabled. Corte para commit: 22:30 UTC.
+- 21:13 UTC: commit `12cc211` com os passos 1 a 3 e push da `main`; hash local igual ao remoto.
+
+## Passo 5: P6 na VM2 desalocada
+
+- 21:14:18 UTC: `az vm disk attach -g rg-prod-brsouth-001 --vm-name vm-appfoundation-prod-001 --name <id do pathsol-dados-vm2-v3> --lun 1 --caching ReadOnly`.
+  - Resultado: rc=0 às 21:14:23. Modelo da VM2: lun0 P15 (ReadOnly) e lun1 `pathsol-dados-vm2-v3` (ReadOnly); disco `Reserved`, `managedBy` VM2; VM2 `VM deallocated`. O alias `azure-foundation` do ssh resolve para 10.0.0.4, usuário `azureps`, com `StrictHostKeyChecking false` (`ssh -G`).
+
+## Passo 6: primeira partida da VM2 e congelamento
+
+- Script `partir-congelar.sh`: recusa partir depois das 21:40 UTC; `az vm start --no-wait`; tenta o ssh a cada 2 s, até 7 min; na primeira resposta, grava o `congelar.sh` em `/tmp` e o executa como root na mesma conexão (com `bash -s`, o `apt-mark` ou o `dpkg` poderiam ler o resto do script pela entrada padrão); só se o congelamento der certo, roda a leitura `ler-vm2.sh` (só leitura).
+- `congelar.sh`: confere que nenhum processo segura os locks do dpkg (se segurar, para sem mudar nada); seleciona os pacotes instalados cujo nome começa por `linux-`, `nvidia-`, `libnvidia-`, `cuda-drivers` ou `xserver-xorg-video-nvidia`, menos o `nvidia-container-toolkit` e a `libnvidia-container` (não são o driver); exige ao menos uma imagem de kernel e um pacote do driver; `apt-mark hold`; confere cada um no `apt-mark showhold`. Testado na VM1 numa cópia com o `apt-mark` trocado por `echo`: parou na porta do driver (0 pacotes) e, com a porta forçada, listou 25 pacotes `linux-*`, sem nenhum hold real.
+- 21:16:11 UTC: `bash partir-congelar.sh` (sha256: `congelar.sh` `c360cb5c…`, `ler-vm2.sh` `97358652…`, `partir-congelar.sh` `d30be84c…`).
+  - Partida: `az vm start --no-wait` às 21:16:11; boot do convidado às 21:16:38; ssh respondeu às 21:17:45.
+  - **Congelamento, primeira ação na VM2:** de 21:17:46 a 21:17:48. `apt-daily` e `apt-daily-upgrade` inactive; locks do dpkg livres. `apt-mark hold` em 48 pacotes, todos conferidos no `showhold`: 3 imagens de kernel (`linux-image-7.0.0-1014-azure`, `linux-image-7.0.0-1017-azure` e o metapacote `linux-image-azure`), os demais pacotes `linux-*` (metapacotes `linux-azure`, `linux-headers-azure`, `linux-tools-azure`, `linux-cloud-tools-azure`; módulos, headers e tools dos dois kernels; headers das 6.17.0-1011 e 1013, que ficaram sem imagem; `linux-base`, `linux-base-sgx`, `linux-libc-dev`, `linux-tools-common`, `linux-cloud-tools-common`) e 17 do driver: `cuda-drivers`, `nvidia-driver`, `nvidia-dkms`, `nvidia-kernel-common`, `nvidia-kernel-source`, `nvidia-firmware`, `nvidia-modprobe`, `nvidia-persistenced`, `nvidia-settings`, `xserver-xorg-video-nvidia` e 7 `libnvidia-*`, todos 595.71.05-1ubuntu1, mais o `nvidia-firmware-580-server-580.126.20` (580.126.20-0ubuntu0.24.04.2, sobra do arquivo do Ubuntu). Resultado: `CONGELADO`, rc=0.
+  - Leitura (21:17:50, só leitura): Ubuntu 24.04.4, kernel 7.0.0-1017-azure. Discos: `sda` P15 (lun0, ext4 UUID `e3fe7aa1-b82a-488a-a37b-86dc454b89ff`, sem rótulo, no `/data`), `sdb` P6 (lun1, vazio), `sdc` SO, `sdd1` temporário de 176 GiB no `/mnt`. fstab do `/data`: `UUID=e3fe7aa1-… /data ext4 defaults,nofail 0 2` (sem `discard`, ao contrário da VM1). Raiz do `/data` `root:root 755`; só `containerd` (700) e `docker` (710), sem `lost+found` (o `find -delete` da Fase 1 apagou); 39 entradas; `/data` 316K de 251G; `/` com 69%. `daemon.json`: `data-root` `/data/docker`, runtime `nvidia` padrão. containerd: `root = "/data/containerd"` no `config.toml`; `/var/lib/containerd` é uma pasta antiga no disco de SO (`root 700`, de 07/05), fora do uso. `docker info`: `/data/docker|overlayfs|[["driver-type","io.containerd.snapshotter.v1"]]|io.containerd.runc.v2,nvidia,runc,|nvidia`, engine `086dcf96-…`, Docker 29.4.3, 0 containers, imagens e volumes; socket `root:docker 660`. GPU: Tesla T4, driver 595.71.05, 16384 MiB, persistence Enabled; DKMS `nvidia/595.71.05` instalado para 7.0.0-1014 e 7.0.0-1017. Kernels 6.17 só em `rc`. unattended-upgrades 2.9.1+nmu4ubuntu1, com as mesmas conferências de hold (linhas 229 e 1042); `Unattended-Upgrade "1"`; origens `noble`, `noble-security` e ESM. `apt-daily-upgrade.timer` com próxima execução às 21:51:20 (última em 15/10 09:53); `apt-daily.timer` às 04:57 de 28/10. Sem `reboot-required`; última atualização em 15/10 09:53–09:54; `dpkg --audit` vazio; nenhuma unit em falha.
+- 21:19:06 UTC (só leitura): o handler da extensão no disco é o `NvidiaGpuDriverLinux-1.13.0.2`, de 07/05/2026 (o modelo diz 1.9, com atualização automática de versão menor). O agente rodou `nvidia-vmext.sh enable` nesta partida, de 21:17:45.77 a 21:17:47.78, com status `Ready`; nenhum processo segura os locks do dpkg. `findmnt --verify` do fstab atual: rc=0, "Success, no errors or warnings detected".
+- 21:19:07 UTC: `trocar-data.sh checar 1 0 68719476736 dados-vm2-v3 0:0 e3fe7aa1-…` (script `c988bd14…`: a porta do conteúdo do `/data` passou a aceitar a falta do `lost+found`): todas as portas passaram; nada mudou.
+
+## Passo 7: `/data` da VM2 no P6
+
+- 21:19:50 UTC: `sudo bash /tmp/pathsol-trocar.sh executar 1 0 68719476736 dados-vm2-v3 0:0 e3fe7aa1-b82a-488a-a37b-86dc454b89ff` na VM2 (script `c988bd14…`, a mesma sequência do passo 2).
+  - Resultado: rc=0, concluído às 21:20:02, sem nenhuma porta parada. `mkfs.ext4 -F -m 0 -L dados-vm2-v3 -E root_owner=0:0 /dev/sdb`; UUID novo `9169a38c-9b8e-4ef7-bfbc-6daa54402e3a`. Linha do fstab: `UUID=9169a38c-9b8e-4ef7-bfbc-6daa54402e3a /data ext4 defaults,nofail 0 2` (mesmas opções de antes). Cópia: 39 entradas e 10 arquivos com o mesmo sha256. Drop-ins `10-requires-data.conf` no containerd e no docker, com `data.mount` em `Requires` e `After`. `docker info` igual (`…|io.containerd.runc.v2,nvidia,runc,|nvidia`), mesmo engine `086dcf96-…`, socket `root:docker 660`. `backingFsBlockDev` recriado no disco novo (8:16). `df`: `/dev/sdb` 63G, 328K usados.
+
+## Passo 8: P15 fora, ciclo de desalocar e ligar, evidência
+
+- Script `ciclo-vm2.sh` (`checar-p15.sh`, `ver-vm2.sh`): recusa começar depois das 21:50 UTC; porta do P15 no convidado (a lun0 tem o UUID antigo, não aparece no `mountinfo` de nenhum processo, o fstab não a cita e o `/data` está no P6); `az vm deallocate`; `az vm disk detach` do P15 com a VM desalocada, para o convidado não ver retirada a quente (como a do P20); conferência do modelo (só a lun1) e do P15 (`Unattached`); `az vm start`; ssh; evidência; `az vm deallocate` só se a evidência sair limpa.
+- 21:21:20 UTC: `bash ciclo-vm2.sh` (sha256: `checar-p15.sh` `0fc39651…`, `ver-vm2.sh` `ac5cfeb9…`, `ciclo-vm2.sh` `35c69a89…`).
+  - Porta do P15: lun0 = `/dev/sda` (8:0), UUID `e3fe7aa1-…`, em 0 `mountinfo`, 0 linhas do fstab com o UUID antigo, `/data` com o UUID do P6: `P15_LIVRE`.
+  - 21:21:28: `az vm deallocate -g rg-prod-brsouth-001 -n vm-appfoundation-prod-001`; `PowerState/deallocated` às 21:22:03.
+  - 21:22:03: `az vm disk detach -g rg-prod-brsouth-001 --vm-name vm-appfoundation-prod-001 -n vm-appfoundation-prod-001_DataDisk_0`, com a VM desalocada. Modelo da VM2: só `1 pathsol-dados-vm2-v3 ReadOnly`; P15 `Unattached`, sem `managedBy`.
+  - 21:22:09: `az vm start`; `PowerState/running` às 21:23:55; boot do convidado às 21:22:37; ssh às 21:23:58.
+  - Evidência: só a lun1 (`sda`, 64G, `dados-vm2-v3`, no `/data`); sem lun0. `/data` com o UUID `9169a38c-…`, 328K usados. `Mounted data.mount` às 21:22:43.48, `Started containerd.service` às 21:23:01.43 e `Started docker.service` às 21:23:17.99: o `/data` montou antes dos dois. `data.mount`, containerd, `docker.socket` e docker ativos. `docker info` igual, engine `086dcf96-…`, socket `root:docker 660`, 0 containers, imagens e volumes. GPU `Tesla T4, 595.71.05`. 48 holds. `apt-daily` e `apt-daily-upgrade` inactive. O agente rodou o `enable` da extensão NVIDIA às 21:23:38, `Ready`. `EVIDENCIA_OK`.
+  - 21:24:05: `az vm deallocate`; `PowerState/deallocated` às 21:24:38.
+  - A VM2 ficou ligada de 21:16:11 a 21:21:28 e de 21:22:09 a 21:24:38 (~8 min; R$ 4,67/h).
+
+## Passo 9: exclusão do P15 (com o Pedro)
+
+- 21:25:07 UTC: antes do pedido, só leitura: P15 (`vm-appfoundation-prod-001_DataDisk_0`, 256 GiB, criado em 30/04/2026) `Unattached`, sem `managedBy`; 0 travas no `rg-prod-brsouth-001`; VM2 desalocada só com o P6; VM1 ligada só com o P10.
+- 21:25 UTC: pedido ao Pedro, no chat, com a evidência do passo 8 e o comando `az disk delete -g rg-prod-brsouth-001 -n vm-appfoundation-prod-001_DataDisk_0 --yes`, para ele rodar (a trava do `.claude/settings.json` nega o comando à sessão).
+- ~22:34 UTC: resposta do Pedro: "Apaguei o P15".
+- 22:34:16 e 22:34:35 UTC, conferência: **divergência.** O P15 ainda existe: `az disk show` rc=0, `Unattached`, `provisioningState Succeeded` (não `Deleting`), na subscrição `bd87a1ca-…`. O activity log não tem nenhum `Microsoft.Compute/disks/delete` desde 21:20. Parado: nada mais foi feito. Passava das 22:30 UTC, o corte de 30 min antes do auto-shutdown da VM1.
+
+## Situação ao fim da sessão (22:35 UTC)
+
+- VM1: ligada, `/data` no P10 (`dados-vm1-v3`), Docker de pé; P20 desanexado, `Unattached`. Falta: conferir o boot com o P10 na partida de 28/10 (runbook) e, com o `/data` e o Docker mostrados, pedir a exclusão do P20.
+- VM2: desalocada, só com o P6 no `/data` (`dados-vm2-v3`); kernel e driver em hold (48 pacotes). P15 desanexado e ainda existente: a exclusão precisa ser conferida com o Pedro.
