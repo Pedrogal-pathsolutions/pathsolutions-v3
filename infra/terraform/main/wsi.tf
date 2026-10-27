@@ -17,6 +17,9 @@ resource "azurerm_storage_account" "wsi" {
   shared_access_key_enabled       = false
   default_to_oauth_authentication = true
   allow_nested_items_to_be_public = false
+  # The extension uploads from the labs' own networks with a user delegation
+  # SAS, so the endpoint stays reachable; every request needs Entra ID or that SAS.
+  public_network_access = "Enabled"
 
   tags = merge(local.tags, { componente = "wsi" })
 
@@ -32,6 +35,52 @@ resource "azurerm_storage_container" "wsi" {
 
   lifecycle {
     prevent_destroy = true
+  }
+}
+
+# Derivatives have no legal hold (plan 6.6). Blob paths start with the tenant:
+# `tenant/slide/extractor_version/` (pathsol-contrato-h5).
+resource "azurerm_storage_container" "h5" {
+  name               = "slide-h5"
+  storage_account_id = azurerm_storage_account.wsi.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
+# Decision 1. Counted from creation, because a write would reset the
+# modification time. A new tenant container joins the WSI rule in the plan
+# that creates it.
+resource "azurerm_storage_management_policy" "wsi" {
+  storage_account_id = azurerm_storage_account.wsi.id
+
+  rule {
+    name    = "wsi-cold-30d"
+    enabled = true
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = [for c in azurerm_storage_container.wsi : c.name]
+    }
+    actions {
+      base_blob {
+        tier_to_cold_after_days_since_creation_greater_than = 30
+      }
+    }
+  }
+
+  rule {
+    name    = "h5-cool-90d"
+    enabled = true
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = [azurerm_storage_container.h5.name]
+    }
+    actions {
+      base_blob {
+        tier_to_cool_after_days_since_creation_greater_than = 90
+      }
+    }
   }
 }
 

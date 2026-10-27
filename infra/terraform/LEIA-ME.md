@@ -28,6 +28,15 @@ terraform apply <plano>.tfplan
 
 Se o plano estiver velho (o estado mudou depois dele), o Terraform recusa; nesse caso, pare e peça um plano novo.
 
+## Registro de provider de recurso
+
+Nenhum dos providers registra namespaces do Azure: o azurerm 5.x não registra por padrão, e o azapi tem `skip_provider_registration`. Registrar é escrita na subscrição e fica fora do apply. Quando um plano cria o primeiro recurso de um namespace `NotRegistered`, o relatório da fase avisa, e o Pedro registra no mesmo terminal SSH, antes do apply:
+
+```
+az provider register --namespace <Namespace> --wait
+az provider show -n <Namespace> --query registrationState -o tsv   # Registered, senão pare
+```
+
 ## Primeiro apply do bootstrap e migração do estado
 
 O primeiro plano do bootstrap foi feito com backend local (`backend_override.tf`, fora do git), porque a conta do estado ainda não existe. Logo depois do apply:
