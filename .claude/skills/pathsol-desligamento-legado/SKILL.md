@@ -136,7 +136,7 @@ Depois, parar os processos Codex na VM1. Eles são do Pedro, e ele autorizou par
    - Tirar a VM2 do runbook `TurnOn-VMs`. Ele continua ligando a VM1, e o auto-shutdown da VM1 (20:00) continua ativo.
    - Desalocar a VM2 (`az vm deallocate`, pede confirmação).
    - Conferir `VM deallocated` e, no job seguinte do runbook, que só a VM1 foi ligada.
-   - A VM2 fica desalocada até a Fase 4.
+   - A VM2 é ligada na Fase 3 (decisão 7 do plano da Fase 2).
 
 ## Relatório
 

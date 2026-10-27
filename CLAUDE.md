@@ -41,7 +41,8 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 - Toda tabela com dado de tenant tem RLS ativa e forçada.
 - A WSI não passa pela API: upload direto ao Blob com SAS de escopo e prazo curtos.
 - Nenhum dado de paciente (nome, CPF, número de caso real) em logs, commits, testes, fixtures, capturas de tela ou relatórios. Use identificadores internos ou sintéticos.
-- Nenhuma lâmina de laboratório com tecido chega à VM1 nem ao storage antes do parecer jurídico e da autorização do laboratório (decisão 6); a lâmina em branco é a única exceção. Antes do upload, a cópia é desidentificada: sem etiqueta, macro, código de barras e nome original.
+- Nenhuma lâmina de laboratório com tecido chega à VM1 nem ao storage antes do parecer jurídico e da autorização do laboratório (decisão 6); a lâmina em branco é a única exceção.
+- Lâminas do conjunto de treinamento e de aceite são desidentificadas antes do upload: sem etiqueta, macro, código de barras e nome original. No fluxo clínico, a extensão envia o arquivo do scanner, e o sistema nunca lê, mostra nem registra a etiqueta, a imagem macro e o código de barras.
 
 ## ML
 
