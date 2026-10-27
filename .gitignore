@@ -8,3 +8,4 @@
 *.tfplan
 referencia-visual/
 backups/
+*_override.tf
