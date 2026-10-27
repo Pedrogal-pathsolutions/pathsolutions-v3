@@ -1,29 +1,31 @@
 # PathSolutions v3 — regras permanentes do repositório
 
-SaaS multitenant de pré-laudo assistido por IA em patologia digital. Dados de pacientes de laboratórios brasileiros (LGPD). Arquitetura de referência em `docs/arquitetura/`; ela é a fonte de verdade. Relatórios das fases em `docs/v3/`. Registros de ações no legado em `docs/operacao/`.
+SaaS multitenant de pré-laudo assistido por IA em patologia digital. Dados de pacientes de laboratórios brasileiros (LGPD). Arquitetura de referência em `docs/arquitetura/`; ela é a fonte de verdade, salvo nos desvios aprovados pela decisão 5 do plano da Fase 2 (`docs/v3/02-plano-v3.md`), onde vale o plano. Relatórios das fases em `docs/v3/`. Registros de ações no legado em `docs/operacao/`.
 
 ## Conta e recursos
 
 - Uma subscrição só: PATHSOLUTIONS TECNOLOGIA EM SAUDE LTDA, contratada via parceiro CSP (Microsoft Azure Plan, cobrança por uso), sem créditos. ID: `bd87a1ca-e4f5-460b-9f12-c89e114293f1`. O Cost Management mostra preço de tabela; a fatura do parceiro pode ser diferente.
 - Antes de qualquer comando `az` ou `terraform`, confirme a subscrição ativa com `az account show`.
-- VM1, VM2 e a rede já existem. A v3 usa esses recursos, mas eles ficam fora do Terraform: entram só como `data source`. Nunca `terraform import`, nunca no state.
-- A storage account do legado (`stpathsolutionsblob001`) é apagada inteira pelo Pedro, pelo Portal, na Fase 1. O storage da v3 é novo, criado por Terraform.
+- VM1, VM2 e a rede já existem. A v3 usa esses recursos, mas eles ficam fora do Terraform: entram só como `data source`. Nunca `terraform import`, nunca no state. Os discos novos da v3 (decisão 2 do plano) nascem por Terraform e são anexados por `az`, numa ação autorizada.
+- A storage account do legado (`stpathsolutionsblob001`) foi apagada pelo Pedro em 19/10/2026. O storage da v3 é novo, criado por Terraform.
 - Recursos novos da v3 ficam no grupo `rg-pathsol-v3` e são criados só por Terraform.
 - Tudo custa dinheiro: nenhum recurso novo sem custo mensal estimado no plano aprovado.
 
 ## Legado
 
 - A v3 é escrita do zero. Nenhum código, comentário, configuração ou arquivo do legado é copiado para cá. A única coisa que vem do legado é a lista de valores visuais em `docs/v3/referencia-visual.md`, extraída do código na Fase 1, sem capturas de tela.
-- Nenhum dado do legado (rótulos, lâminas, banco, caches, dumps) é exportado: o legado inteiro é apagado na Fase 1, e a v3 começa vazia. Lâminas e casos de treinamento chegam pelo fluxo novo.
-- O legado pode ser lido apenas para extrair fatos (onde estão as WSIs, como a API do PathoWeb responde, versões do driver da GPU). Os fatos são registrados com palavras próprias.
-- Antes da Fase 1, o legado é somente leitura. A Fase 1 desliga e apaga o legado seguindo a skill `pathsol-desligamento-legado`, uma ação por autorização do Pedro.
-- O desligamento não faz snapshots (decisão do Pedro em 15/10/2026): o que a Fase 1 apaga não tem volta, exceto o código, guardado no GitHub com tag.
+- Nenhum dado do legado (rótulos, lâminas, banco, caches, dumps) é exportado: o legado inteiro foi apagado na Fase 1, e a v3 começa vazia. Lâminas e casos de treinamento chegam pelo fluxo novo. Exceção: datasets públicos com licença conferida (padrão 20 do plano) são processados direto da fonte, e só ficam o `.h5` e o manifesto.
+- O legado pode ser lido apenas para extrair fatos (como a API do PathoWeb responde, versões do driver da GPU). Os fatos são registrados com palavras próprias.
+- O desligamento não fez snapshots (decisão do Pedro em 15/10/2026): o que a Fase 1 apagou não tem volta, exceto o código, guardado no GitHub com tag.
 
 ## Storage da v3
 
-- As WSIs no storage da v3 nunca são apagadas, movidas ou alteradas.
+- As WSIs ficam num container de WSI por tenant, com retenção legal (legal hold). Nenhuma pessoa, agente ou serviço da v3 apaga, sobrescreve ou move uma WSI. A única mudança permitida é a de camada, feita pelo ciclo de vida do Azure conforme a política aprovada pelo Pedro e criada por Terraform com plano aprovado; mudar a camada não altera a WSI.
+- Se a exportação de teste confirmar o cabeçalho Motic (decisão 5), a troca de 6 bytes no SVS da Motic acontece só numa cópia temporária, no disco da VM2 ou no cache de tiles. O original não muda, e a cópia nunca volta ao storage.
+- Retirar a retenção legal ou mudar a política de ciclo de vida só com pedido escrito do Pedro e plano aprovado.
+- Exclusão de WSI só por decisão nova do Pedro, por tenant, com instrução escrita do laboratório e parecer jurídico, e com N nunca menor que 90 dias depois da assinatura. As WSIs do conjunto de treinamento, do teste travado e do aceite ficam fora de qualquer exclusão.
 - O soft delete do storage da v3 é ligado no MVP, quando as lâminas e os casos corretos estiverem carregados (decisão do Pedro).
-- Você nunca apaga blobs, containers ou storage accounts, nem os do legado. As travas do `.claude/settings.json` continuam valendo.
+- Você nunca apaga blobs, containers ou storage accounts, nem os do legado. Não são exclusão manual: a execução da política aprovada pelo ciclo de vida do Azure e a limpeza, pelo código aprovado, dos backups do banco além da retenção (35 dias). As travas do `.claude/settings.json` continuam valendo.
 
 ## Gates
 
@@ -39,6 +41,7 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 - Toda tabela com dado de tenant tem RLS ativa e forçada.
 - A WSI não passa pela API: upload direto ao Blob com SAS de escopo e prazo curtos.
 - Nenhum dado de paciente (nome, CPF, número de caso real) em logs, commits, testes, fixtures, capturas de tela ou relatórios. Use identificadores internos ou sintéticos.
+- Nenhuma lâmina de laboratório com tecido chega à VM1 nem ao storage antes do parecer jurídico e da autorização do laboratório (decisão 6); a lâmina em branco é a única exceção. Antes do upload, a cópia é desidentificada: sem etiqueta, macro, código de barras e nome original.
 
 ## ML
 
@@ -46,14 +49,15 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 - Antes de usar os pesos, confirme o sha256 e a licença do arquivo exato. O Hibou-L base e o CellViT-Hibou-L têm licenças diferentes.
 - Todo `.h5` grava `extractor_version`. Um `.h5` com versão diferente da ativa leva a reprocessamento, nunca a inferência.
 - Só as cabeças ABMIL são treinadas, sempre com conjunto de teste travado, separado por caso e por laboratório. Modelo novo fica como candidato até o Pedro aprovar com as métricas.
-- Órgão vazio, não reconhecido ou sem modelo: o caso segue sem IA, e a interface diz isso.
+- Órgão vazio, não reconhecido, sem modelo ou material inelegível: a lâmina segue sem IA (decisão por lâmina e frasco, padrão 17), e a interface diz isso.
+- A assinatura grava o diagnóstico na taxonomia fixa do órgão, a versão do modelo ativa e se a IA foi vista. É o rótulo de treino e a base para medir o efeito da IA.
 - Resultado em um único caso é sinal, não validação. Nunca apresente n=1 como prova.
 
 ## Operação
 
 - Todo cache e todo diretório que cresce tem teto de tamanho e regra de limpeza no código. Disco com alerta em 80% e 90%. Dois incidentes (julho e outubro de 2026) derrubaram a produção por disco cheio.
 - O banco fica em disco separado dos caches.
-- A VM2 fica desalocada quando a fila está vazia.
+- A VM2 fica desalocada quando a fila está vazia, salvo no modo de manutenção, com prazo e alerta (padrão 11).
 
 ## Escopo
 
@@ -64,6 +68,7 @@ Não afirme como algo se comporta sem evidência (arquivo:linha, saída de coman
 ## Infraestrutura
 
 - `terraform plan` salvo e resumido antes de todo `apply`; `apply` só com aprovação.
+- O Terraform roda com o login do `az` do Pedro, só durante o plan e o apply, com `az logout` no fim; nunca com a identidade gerenciada da VM1, que é a da API (decisão 4).
 - Nunca `terraform destroy` nem exclusão de recurso Azure sem pedido explícito.
 
 ## Repositório

@@ -1069,3 +1069,18 @@ Para começar logo depois do APROVADO FASE 2:
 ---
 
 PARADO — aguardando APROVADO FASE 2
+
+## 25. Depois da entrega: respostas e aprovação (27/10)
+
+- **APROVADO FASE 2**, escrito pelo Pedro em 27/10/2026.
+- **Respostas à seção 23:**
+  1. Decisão 1: conforme a recomendação.
+  2. Decisão 2: letra (a), conforme a recomendação. Vale como pedido explícito de exclusão do P20 da VM1 e do P15 da VM2; cada exclusão ainda pede autorização na hora. Com o P15 apagado, o `fstrim` da decisão 7 (item 4) fica dispensado (seção 19.2, Fase 3, fatia 5).
+  3. Decisão 3: D8s_v5. Na construção, auto-shutdown da VM1 às 23:00 de Brasília e o da VM2 às 23:30, mudados na Fase 3 com autorização. Esse horário substitui as 21:00 da VM2 no padrão 11 e na seção 8.3. A VM1 até as 23:00 custa R$ 209,22/mês a mais que no horário de 06–20 h (seção 5.4).
+  4. Decisão 4: aprovado o modo do Terraform. O `codex` sai da VM1: o Pedro desinstala a extensão. O apply é rodado pelo Pedro num terminal SSH comum, com o plano salvo e o Antigravity fechado.
+  5. Decisões 5, 6 e 7: conforme a recomendação.
+  6. Padrões 1 a 27: aprovados como estão, com o horário do padrão 11 trocado pela decisão 3.
+- **`PROMPT_V3.md` e `CLAUDE.md`:** o Pedro substituiu os dois pelas versões novas em 27/10. Na conferência contra este plano, sem nova revisão, ficaram duas divergências:
+  1. `CLAUDE.md`, seção "Dados clínicos": "Antes do upload, a cópia é desidentificada" está escrita como regra geral. No plano, a desidentificação vale só para o conjunto de treinamento e as lâminas de aceite, no script do operador e no CLI (seções 4.1 e 12.3). No fluxo clínico, a extensão envia o arquivo do scanner, e etiqueta e macro nunca são lidas, servidas nem registradas (seção 4.1). Lida como geral, a regra exige desidentificar na extensão, o que o plano não prevê.
+  2. A skill `pathsol-desligamento-legado` (SKILL.md:139) ainda diz "A VM2 fica desalocada até a Fase 4". A decisão 7 (item 4) e o `PROMPT_V3.md` (Fase 3, item 4) ligam a VM2 na Fase 3, e o `PROMPT_V3.md` manda atualizar só a skill `pathsol-contrato-h5`.
+- A Fase 3 começa numa sessão nova.
