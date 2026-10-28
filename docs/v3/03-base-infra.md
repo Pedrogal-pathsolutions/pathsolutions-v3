@@ -327,11 +327,8 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Alertas que disparam com o trabalho normal.** O `storage-write` dispara em todo apply que mude uma conta, e o `role-assignment` em toda atribuição de papel, inclusive as das próximas fatias. Cada um manda e-mail ao Pedro, que confere se o apply era dele.
 - **CAA preso a uma conta ACME.** A chave da conta fica só em `/etc/letsencrypt` na VM1, sem backup. Se ela se perder, a renovação falha até o Pedro mudar o CAA na Cloudflare. O HSTS de 1 ano também obriga o nome a ficar em HTTPS.
 - **Teto de cache do agente em preview e VM2 com o `/` em 69% de 29G.** No pior caso (agente sem rede), o cache de até 4.000 MB leva o `/` da VM2 para perto de 85%; os alertas de disco avisam em 80%.
-- **Extensão `log-analytics` do `az`, em preview, instalada sozinha** pelo `az monitor log-analytics query` às 22:47 UTC, sem autorização pedida. Fica até o Pedro decidir.
 - **Auto-shutdown da VM1 desligado desde 28/10, 20:52 UTC.** Até ser religado, a VM1 fica ligada sem horário, a R$ 3,19/h. A sessão 6 pede a autorização para religá-lo às 23:00 de Brasília (decisão 3) no fim dela.
 
 ## Decisões pedidas ao Pedro
 
-1. Pedido escrito para a regra `backup-dump-35d` na política de ciclo de vida da `pathsolwsiv3` (`CLAUDE.md`), junto com o apply do `fatias6-7.tfplan`.
-2. Padrão 27 com PowerShell 7.6 no lugar do 7.4, que perde o suporte upstream em 10/11/2026.
-3. Extensão `log-analytics` do `az`: manter ou remover.
+Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` e pediu por escrito a regra `backup-dump-35d`; o padrão 27 usa PowerShell 7.6; a extensão `log-analytics` saiu e o `az` não instala mais extensões sozinho (`extension.use_dynamic_install=no`). Pendente para o fim da noite: religar o auto-shutdown da VM1 às 23:00 e mudar o da VM2 para 23:30, com autorização na hora.
