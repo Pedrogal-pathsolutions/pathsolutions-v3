@@ -100,3 +100,28 @@ Os passos são os 9 da seção "Plano da fatia 5 (discos)" do `docs/v3/03-base-i
 
 - VM1: ligada, `/data` no P10 (`dados-vm1-v3`), Docker de pé; P20 desanexado, `Unattached`. Falta: conferir o boot com o P10 na partida de 28/10 (runbook) e, com o `/data` e o Docker mostrados, pedir a exclusão do P20.
 - VM2: desalocada, só com o P6 no `/data` (`dados-vm2-v3`); kernel e driver em hold (48 pacotes). P15 desanexado e ainda existente: a exclusão precisa ser conferida com o Pedro.
+
+## 28/10: conferência do P15, partida da VM1 e passo 4
+
+- 20:53 UTC: `az account show`: mesma subscrição, Enabled, login de usuário.
+- 20:53 UTC, passo 9 conferido: `az disk show` do P15 deu `ResourceNotFound` (rc=3). No activity log, o `Microsoft.Compute/disks/delete` do `vm-appfoundation-prod-001_DataDisk_0` começou às 22:40:53 e terminou `Succeeded` às 22:41:12 UTC de 27/10, pelo usuário do Pedro no Azure Portal. A conferência das 22:34 veio antes da exclusão; a divergência era de horário.
+- Fora desta fatia, no mesmo activity log: duas gravações no agendamento de auto-shutdown da VM1 pelo Portal, às 22:34:35 e 22:40:17 UTC de 27/10, sem o conteúdo visível no log. A VM1 desalocou às 23:00:35 pelo auto-shutdown, então ele seguia ligado às 20:00 de Brasília.
+- 20:55 UTC, ciclo da VM1 depois da troca do `/data` (activity log): `deallocate` de 23:00:35 a 23:00:48 UTC de 27/10, pelo auto-shutdown (aplicativo `1a14be2a…`, sem identidade gerenciada); `start` de 09:01:31 a 09:02:53 UTC de 28/10, pela identidade da `asa-prod-brsouth-001` (runbook `TurnOn-VMs`). Boot do convidado às 09:01:57.
+- 20:56 UTC, evidência na VM1 (só leitura):
+  - só a lun1 (`sda`, 128G, `dados-vm1-v3`, UUID `6a09d498-…`), no `/data`, ext4 `rw,relatime,discard`; linha 6 do fstab com o UUID novo; `/data` com 332K usados e `/` com 55%;
+  - `Mounted data.mount` às 09:02:04.45, `Listening on docker.socket` às 09:02:11.80, `Started containerd.service` às 09:02:16.03 e `Started docker.service` às 09:02:33.44;
+  - `docker info` igual ao de 27/10 (`/data/docker|overlayfs|[["driver-type","io.containerd.snapshotter.v1"]]|io.containerd.runc.v2,runc,|runc`), engine `18252361-…`, Docker 29.4.2; 0 containers, imagens, volumes e cache de build; socket `root:docker 660`;
+  - nenhum aviso das três units no boot; o único erro do boot inteiro é `/dev/sr0: Can't lookup blockdev`, que também aparece no boot anterior. As linhas `skip loading plugin` do containerd e `Deleting nftables` do dockerd são de nível `info` e aparecem também no boot anterior (20 ocorrências);
+  - no desligamento de 27/10, às 23:00:36, docker e containerd pararam e o `data.mount` foi desmontado (journal do boot anterior): a desalocação pelo auto-shutdown desligou o convidado de forma limpa.
+- 21:05 UTC, antes do pedido: P20 (`vm-appviewer-prod-001_DataDisk_0`, 512 GiB, Premium_LRS, criado em 30/04/2026) `Unattached`, sem `managedBy`; nenhuma trava no `rg-prod-brsouth-001`; modelo da VM1 só com a lun1.
+
+## Passo 4: exclusão do P20 (com o Pedro)
+
+- 21:05 UTC: pedido ao Pedro, no chat, com a evidência acima e o comando `az disk delete -g rg-prod-brsouth-001 -n vm-appviewer-prod-001_DataDisk_0 --yes`, para ele rodar (a trava do `.claude/settings.json` nega o comando à sessão). Resposta: "Rodei o comando".
+- 21:07:30 UTC: `az disk show` do P20 deu `ResourceNotFound` (rc=3). Activity log: `disks/delete` de 21:07:14 a 21:07:30 UTC, `Succeeded`, pelo Azure CLI.
+
+## Situação ao fim da fatia 5 (28/10, 21:10 UTC)
+
+- `rg-prod-brsouth-001`: só os dois discos de SO. `rg-pathsol-v3`: `pathsol-dados-vm1-v3` (P10) `Attached` à VM1 e `pathsol-dados-vm2-v3` (P6) `Reserved` pela VM2 desalocada.
+- Com o P20 e o P15 apagados e os dois discos novos: −R$ 733,04/mês (plano, seção 5.4).
+- Fatia 5 concluída. Os tetos do Docker vêm na fatia 6, antes do primeiro `docker pull`.

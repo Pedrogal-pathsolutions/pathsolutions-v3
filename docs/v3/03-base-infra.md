@@ -11,8 +11,9 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
-| 5. Primeira partida da VM2 e discos | passos 1 a 8 feitos (27/10). VM1: `/data` no P10 e P20 desanexado; a exclusão do P20 é pedida depois da partida de 28/10, com o `/data` e o Docker conferidos. VM2: congelamento de kernel e driver como primeira ação, `/data` no P6, P15 desanexado, ciclo de desalocar e ligar com evidência limpa, VM2 desalocada. Passo 9: o Pedro respondeu que apagou o P15, mas às 22:34 UTC o disco ainda existia, sem `disks/delete` no activity log; a conferir. Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
-| 6 a 8 | não começadas |
+| 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
+| 6. VMs | em andamento (28/10). O Pedro desligou o auto-shutdown da VM1 às 20:52 UTC, para a sessão ir mais longe; ele é religado às 23:00 de Brasília no fim da sessão. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
+| 7 e 8 | não começadas |
 
 ## O que foi feito
 
@@ -61,6 +62,13 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 6. VM2, passos 5 a 8: P6 anexado com a VM desalocada; na primeira partida (21:16 UTC), o congelamento foi a primeira ação: `apt-mark hold` em 48 pacotes do kernel e do driver 595.71.05, às 21:17:48, 33 min antes da execução marcada do `apt-daily-upgrade`. Depois, leitura, `/data` no P6 com o mesmo procedimento da VM1, P15 desanexado com a VM desalocada, partida de novo e evidência: só a lun1, `/data` montado antes do containerd e do docker, `docker info` e engine iguais, T4 com o driver 595.71.05, holds intactos. VM2 desalocada às 21:24:38; ligada por ~8 min no total.
 7. Passo 9: o Pedro respondeu "Apaguei o P15", mas a conferência das 22:34 UTC achou o disco `Unattached` e `Succeeded`, sem `disks/delete` no activity log. Parado ali, já depois do corte das 22:30 UTC.
 8. A sessão esperou aprovações de 12:57 a 14:03 e de 14:12 a 21:07 UTC; por isso a VM2 entrou já perto do auto-shutdown dela (22:00 UTC), com cortes de horário nos scripts.
+
+### Sessão 6 (28/10, a partir das 20:52 UTC)
+
+1. O Pedro entrou no `az`, apagou o P15 pelo Portal e desligou o auto-shutdown da VM1 (20:52 UTC). Pediu a conferência do P15, a do ciclo da VM1 e, depois, as fatias 6 a 8, com parada limpa até as 01:30 de Brasília.
+2. P15: o activity log mostra a exclusão de 22:40:53 a 22:41:12 UTC de 27/10, seis minutos depois da conferência das 22:34. A divergência da sessão 5 era de horário.
+3. VM1: desalocada pelo auto-shutdown às 23:00:35 UTC de 27/10 e ligada pelo runbook às 09:01:31 de 28/10. Na partida, só a lun1, o `/data` no P10 montado antes do containerd e do docker, e o `docker info` igual ao de 27/10. No desligamento, o journal mostra docker, containerd e `/data` parados em ordem.
+4. O Pedro apagou o P20 (21:07:14 a 21:07:30 UTC, Azure CLI). Fatia 5 concluída.
 
 ## Plano da fatia 5 (discos)
 
@@ -237,8 +245,6 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se o e-mail do orçamento chega. O orçamento foi criado nesta subscrição CSP, em BRL; o primeiro aviso esperado é o de 50%.
 - Se uma tentativa negada aparece no activity log como Failed e dispara o alerta, e se o alerta de `QueueMessageCount` dispara com uma contagem diária (fatia 8).
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
-- O boot da VM1 com o P10 no `/data` e sem o P20: fica para a partida de 28/10. Anexar um disco de outro grupo com a VM1 ligada funcionou em 27/10 (sessão 5).
-- Por que o P15 continuava existindo às 22:34 UTC, depois da resposta "Apaguei o P15".
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
 - Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Fica para os testes da fatia 8.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
@@ -252,8 +258,8 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **A gravação de blob inclui a troca de camada.** O Set Blob Tier exige `blobs/write` (learn.microsoft.com, página da operação Set Blob Tier, lida em 27/10), e o papel sem exclusão precisa dessa ação. Uma identidade com o papel poderia mudar a camada de uma WSI à mão; a regra (`CLAUDE.md`, storage da v3) deixa isso só para o ciclo de vida, então o código das Fases 4 e 5 não pode chamar Set Blob Tier. Mudar a camada não altera a WSI.
 - **Rede pública aberta nas contas, no Key Vault e no Log Analytics.** O que protege é a identidade: sem chave compartilhada, sem acesso anônimo (exceto o site do status, por desenho) e com retenção legal nas WSIs. Uma credencial do Entra ID vazada alcança o endpoint de qualquer rede.
 - **Alertas que disparam com o trabalho normal.** O `storage-write` dispara em todo apply que mude uma conta, e o `role-assignment` em toda atribuição de papel, inclusive as das próximas fatias. Cada um manda e-mail ao Pedro, que confere se o apply era dele.
-- **Auto-shutdown e decisão 3.** Mudar o da VM1 para 23:00 durante uma sessão noturna derruba a sessão às 23:00 do mesmo dia: hoje a VM1 já passou das 20:00 e só desliga às 20:00 de amanhã. A mudança fica para a fatia 6, num horário de dia.
+- **Auto-shutdown da VM1 desligado desde 28/10, 20:52 UTC.** Até ser religado, a VM1 fica ligada sem horário, a R$ 3,19/h. A sessão 6 pede a autorização para religá-lo às 23:00 de Brasília (decisão 3) no fim dela.
 
 ## Decisões pedidas ao Pedro
 
-Nenhuma decisão. Pergunta que bloqueia o passo 9: o `az disk delete` do P15 rodou? Às 22:34 UTC o disco seguia `Unattached` e `Succeeded`, sem `disks/delete` no activity log desde 21:20. A próxima sessão confere de novo antes de qualquer outra coisa.
+Nenhuma decisão.
