@@ -1,0 +1,22 @@
+# Plan 4.5: port 80 only answers the Let's Encrypt HTTP-01 challenge for the
+# v3 name and redirects everything else to HTTPS. Other names get no answer.
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+    server_name _;
+    return 444;
+}
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name app.pathsolutions.com.br;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/acme;
+    }
+
+    location / {
+        return 301 https://app.pathsolutions.com.br$request_uri;
+    }
+}

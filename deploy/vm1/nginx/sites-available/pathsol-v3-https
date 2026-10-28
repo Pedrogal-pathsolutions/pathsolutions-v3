@@ -1,0 +1,29 @@
+# Enabled only after the certificate exists. TLS is negotiated before SNI picks
+# a server, so the default server pins the protocols too; it refuses names
+# other than the v3 one.
+server {
+    listen 443 ssl default_server;
+    listen [::]:443 ssl default_server;
+    server_name _;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_reject_handshake on;
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name app.pathsolutions.com.br;
+
+    ssl_certificate     /etc/letsencrypt/live/app.pathsolutions.com.br/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/app.pathsolutions.com.br/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_session_cache   shared:pathsol:10m;
+    ssl_session_timeout 1d;
+    ssl_session_tickets off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    # Until the workspace exists (Phase 6).
+    default_type text/plain;
+    return 503 "PathSolutions v3: em construcao\n";
+}

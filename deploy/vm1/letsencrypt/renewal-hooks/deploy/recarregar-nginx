@@ -1,0 +1,3 @@
+#!/bin/sh
+# certbot runs this after each renewal; nginx reads a new certificate only on reload.
+exec systemctl reload nginx
