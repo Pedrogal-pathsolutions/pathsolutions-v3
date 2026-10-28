@@ -82,6 +82,22 @@ resource "azurerm_storage_management_policy" "wsi" {
       }
     }
   }
+
+  # Plan 7: only pg_dump files. pgBackRest expires its own files, and the
+  # prefix never reaches a WSI container.
+  rule {
+    name    = "backup-dump-35d"
+    enabled = true
+    filters {
+      blob_types   = ["blockBlob"]
+      prefix_match = ["${azurerm_storage_container.backup.name}/dump/"]
+    }
+    actions {
+      base_blob {
+        delete_after_days_since_creation_greater_than = 35
+      }
+    }
+  }
 }
 
 # azurerm has no legal hold resource. The action runs once, when the container

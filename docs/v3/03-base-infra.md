@@ -12,8 +12,9 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
-| 6. VMs | em andamento (28/10). O Pedro desligou o auto-shutdown da VM1 às 20:52 UTC, para a sessão ir mais longe; ele é religado às 23:00 de Brasília no fim da sessão. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
-| 7 e 8 | não começadas |
+| 6. VMs | em andamento (28/10). VM1 sem Terraform: limpeza da seção 4.5, tetos de logs, nginx e certificado novos. Plano `fatias6-7.tfplan` salvo, com identidade da VM2, papéis, agente e alertas. Faltam o apply, o agente nas duas VMs, a identidade e os tetos da VM2, a unit do status, o runbook e o auto-shutdown. O Pedro desligou o auto-shutdown da VM1 às 20:52 UTC, para a noite ir mais longe; ele é religado às 23:00 de Brasília no fim da noite. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
+| 7. Postgres, backup e restauração | plano salvo no mesmo `fatias6-7.tfplan` (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps) |
+| 8. Testes | não começada |
 
 ## O que foi feito
 
@@ -69,6 +70,57 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 2. P15: o activity log mostra a exclusão de 22:40:53 a 22:41:12 UTC de 27/10, seis minutos depois da conferência das 22:34. A divergência da sessão 5 era de horário.
 3. VM1: desalocada pelo auto-shutdown às 23:00:35 UTC de 27/10 e ligada pelo runbook às 09:01:31 de 28/10. Na partida, só a lun1, o `/data` no P10 montado antes do containerd e do docker, e o `docker info` igual ao de 27/10. No desligamento, o journal mostra docker, containerd e `/data` parados em ordem.
 4. O Pedro apagou o P20 (21:07:14 a 21:07:30 UTC, Azure CLI). Fatia 5 concluída.
+5. Fatia 6, VM1, com autorização por ação (registro em `docs/operacao/2026-10-28-fatia6-vms.md`): certificado do legado revogado (conferido na CRL); 80 e 443 só para a VM1; regras 200 a 230 fora; site do legado e cópias, certbot do apt, `/etc/letsencrypt`, rpcbind, `nfs-common`, sobras vazias e 11 órfãos do apt fora; tetos de logs (journald 1G; Docker com driver `local` e cache de build de 20 GiB); nginx novo e certificado de `app.pathsolutions.com.br`, com conta ACME nova sem e-mail e CAA com `accounturi` (o Pedro criou o CAA e apagou o registro `upload`).
+6. Workflow de leitura de documentação (7 tópicos, só fontes oficiais, sem comando no Azure) para o código das fatias 6 e 7. Os fatos que mudaram o código estão em "Plano das fatias 6 e 7".
+7. Código e plano das fatias 6 e 7 juntos, a pedido do Pedro (`fatias6-7.tfplan`).
+
+## Plano das fatias 6 e 7 (Terraform)
+
+`terraform plan -out=fatias6-7.tfplan` em 28/10, 22:48 UTC: **30 a criar, 1 a alterar, 0 a destruir.** A alteração é a política de ciclo de vida da `pathsolwsiv3`: ganha a regra `backup-dump-35d`, e as regras `wsi-cold-30d` e `h5-cool-90d` ficam iguais (conferido no JSON do plano). VM1, VM2, automação e grupo das VMs entram só como `data`; nenhum recurso de VM, disco atual ou rede aparece no plano. sha256: `073ee8e3a255068a5fe1ced13067ce7cdaa99124487a2679b59d6ad20bc5f48f`.
+
+**Mudar a política de ciclo de vida exige pedido escrito do Pedro (`CLAUDE.md`, storage da v3).** A regra nova só apaga arquivos com prefixo `backup-banco/dump/` (o `pg_dump`) 35 dias depois da criação (plano, seção 7).
+
+| Recurso | O quê | Custo/mês |
+|---|---|---:|
+| `azurerm_user_assigned_identity.vm2` | `pathsol-id-vm2-v3`, a identidade do worker (padrão 9); o `az` a anexa com a VM2 desalocada | R$ 0 |
+| `azurerm_role_definition` × 5 | `pathsol-vm2-energia-v3` (ler, ligar e desalocar a VM2), `pathsol-vm2-autodesalocar-v3` (ler e desalocar), `pathsol-vm1-ligar-v3` (ler e ligar; padrão 27), atribuíveis no grupo das VMs; `pathsol-fila-worker-v3` (`messages/process/action` e `messages/write`) e `pathsol-backup-banco-v3` (ler, gravar e apagar blobs, mais `containers/read` e `containers/write`), atribuíveis no `rg-pathsol-v3` | R$ 0 |
+| `azurerm_role_assignment` × 11 | VM1 (identidade do sistema): energia na VM2; Storage Queue Data Reader na `jobs`; papel sem exclusão no `$web` do status; backup no `backup-banco`. VM2 (identidade nova): autodesalocar nela mesma; fila do worker na `jobs`; Storage Queue Data Message Sender na `jobs-dead-letter`; Storage Blob Data Reader nos dois containers de WSI; papel sem exclusão no `slide-h5`. Automação: ligar só a VM1 | R$ 0 |
+| `azurerm_monitor_data_collection_rule.vms` | `pathsol-coleta-vms-v3`: `Logical Disk(*)\% Used Space` a cada 60 s e syslog `local0` (Info para cima), só para o Log Analytics | ~R$ 2,40 de ingestão (estimativa: ≤ 0,1 GB/mês a R$ 24,0092/GB; o volume real decide o teto diário) |
+| `azapi_resource.agent_settings` | `pathsol-agente-v3`, regra `AgentSettings`: cache local do agente em 4.000 MB, o mínimo (o padrão é 10.000 MB, no disco de SO) | R$ 0 |
+| `azurerm_monitor_data_collection_rule_association` × 4 | as duas regras nas duas VMs | R$ 0 |
+| `azurerm_monitor_scheduled_query_rules_alert_v2` × 4 | `pathsol-disco-80-v3` (sev. 2) e `pathsol-disco-90-v3` (sev. 1) na tabela `Perf`, por máquina e montagem (`/`, `/boot`, `/data`, `/srv/banco`, `/mnt`), a cada 15 min; `pathsol-vm1-silencio-v3` (sev. 1): nenhum heartbeat em 10 min, de segunda a sexta, das 06:20 às 22:50 de Brasília; `pathsol-vm2-ligada-v3` (sev. 2): 235 heartbeats ou mais em 4 h. Todos com estado: um e-mail ao disparar e um ao resolver | R$ 8,87 (disco: 2 × [R$ 2,6097 + 7 × R$ 0,2610]) + R$ 5,22 (2 × R$ 2,6097) |
+| `azurerm_monitor_activity_log_alert.vm1_saude` | `pathsol-vm1-saude-v3`: Resource Health da VM1 indisponível ou degradada por causa da plataforma (seção 18) | R$ 0 |
+| `azurerm_managed_disk.banco` | `pathsol-banco-v3`: P6 de 64 GiB, Premium LRS, `DenyAll`, sem rede pública, `prevent_destroy` (seção 7) | R$ 92,03 |
+| `azurerm_storage_container.backup` | `backup-banco` na `pathsolwsiv3`, privado, sem retenção legal, `prevent_destroy`: `pgbackrest/` e `dump/` | R$ 0 vazio; depois, R$ 13 a R$ 31 em ZRS (seção 6.6) |
+| `azurerm_storage_management_policy.wsi` (alterar) | regra `backup-dump-35d`, só no prefixo `backup-banco/dump/` | R$ 0 |
+| **Total** | | **~R$ 108,52** |
+
+Preços da Retail Prices API (BRL, brazilsouth), lidos em 28/10 (alertas) e 27/10 (P6). O plano estimava ~R$ 105,80 para os mesmos itens (P6, padrão 12 e Log Analytics).
+
+Escolhas desta sessão, fora do texto do plano:
+- **Alertas de disco por busca em log, e não por métrica.** O plano (seção 9.4) contava 12 séries de métrica de convidado. O destino de métricas do agente usa as métricas personalizadas do Azure Monitor, que a Microsoft mantém em preview e diz que "won't be made generally available" (metrics-custom-overview, lida em 28/10). O nome da métrica e a dimensão da montagem só aparecem no código do agente, não na documentação. A tabela `Perf` do Log Analytics, que a seção 9.3 já previa, é GA. A diferença de custo é de ~R$ 2,61/mês.
+- **`/boot` nos alertas de disco**, além das montagens da seção 9.3: kernel novo enche o `/boot` (913M) e trava atualizações. Duas séries a mais, R$ 0,52/mês.
+- **Silêncio da VM1 com o horário na consulta**, em vez de uma regra de supressão: as regras de processamento de alertas exigem registrar o `Microsoft.AlertsManagement` (NotRegistered). A consulta usa UTC−3 fixo (Brasília não tem horário de verão desde 2019). Se o horário mudar (decisão 3), a consulta muda junto.
+- **Fila do worker em papel próprio**: o Update Message, que o retry usa, exige `messages/write`, e nenhum papel interno junta só isso com o `process/action` (tabela de permissões do Storage, lida em 28/10).
+- **Papel de backup com `containers/write`**: a exclusão em lote do pgBackRest (Blob Batch) exige essa ação no pedido pai (mesma tabela). Ela não apaga container.
+- **Alerta de job na fila há mais de 4 h e os dois alertas do banco** (seções 7 e 9.4) ficam para o próximo plano, junto do reconciliador e do script de verificação. Criados antes deles, disparariam sem motivo.
+
+**No apply**, disparam os alertas de activity log da fatia 4: `pathsol-role-definition-v3` (5 vezes), `pathsol-role-assignment-v3` (11) e `pathsol-lifecycle-write-v3` (1). São do apply, não incidente. Depois do apply, até o agente entrar na VM1, o `pathsol-vm1-silencio-v3` dispara dentro do horário dela; por isso a instalação do agente na VM1 é o primeiro passo depois do apply.
+
+**Depois do apply**, uma ação por autorização, registradas em `docs/operacao/`:
+1. Conferência: sha256, `terraform plan` sem mudanças e os recursos com os atributos do plano.
+2. VM1: agente (`AzureMonitorLinuxAgent`) com a identidade do sistema; conferir Heartbeat e `Perf` no workspace e os nomes reais das montagens (`InstanceName`) contra a consulta dos alertas.
+3. VM2, desalocada: anexar a `pathsol-id-vm2-v3`. Depois, ligar; agente com a identidade nova (`mi_res_id` nas configurações), tetos de logs como os da VM1 e SSH a partir da VM1 (regras 200 a 230 já saíram); ciclo de desalocar e ligar, evidência e desalocar.
+4. VM1: unit do status (seção 18), com teste.
+5. Runbook (padrão 27): ambiente de execução novo e código novo; depois, retirar o Virtual Machine Contributor da automação no grupo das VMs.
+6. Fatia 7: anexar o `pathsol-banco-v3` na VM1, XFS em `/srv/banco`, Postgres, pgBackRest, `pg_dump`, script de verificação e teste de restauração.
+
+Fatos conferidos na documentação em 28/10, que valem para os passos seguintes:
+- pgBackRest 2.60.0 (18/10/2026; o PGDG de Debian trixie tem `2.60.0-1.pgdg13+1`) autentica no Blob com `repo-azure-key-type=auto` desde a 2.58.0, ainda experimental. Ele não escolhe a identidade: usa a padrão do IMDS, que na VM1 é a do sistema. A 2.60.0 faz o restore parar com erro se uma página tiver checksum inválido.
+- PowerShell 7.4 no Automation: GA, mas o suporte upstream acaba em 10/11/2026. O 7.6 é GA no Automation desde julho de 2026, com suporte até 14/11/2028. Os ambientes 7.4 e 7.6 são criados à mão (não há ambiente do sistema) e ligados ao runbook pela propriedade `runtimeEnvironment` (API 2024-10-23).
+- certbot 5.8.0 usa ARI na renovação por padrão. O Let's Encrypt passa o perfil padrão a 64 dias em 10/02/2027 e a 45 dias em 16/02/2028. Com 64 dias e renovação a ~2/3, sobram ~21 dias na renovação normal: o alerta de 21 dias da seção 4.5 dispararia sempre, e o script de verificação da fatia 7 precisa de um limiar relativo à validade.
+- Agente: cache padrão de 10.000 MB em `/var/opt/microsoft/azuremonitoragent/events`, teto de 4.000 a 1.000.000 MB pela regra `AgentSettings` (que aparece como preview na página de gerenciamento do agente). Com só a identidade atribuída pelo usuário, as configurações da extensão levam `authentication.managedIdentity` com `identifier-name` `mi_res_id`.
+- Docker 29: `builder.gc.defaultKeepStorage` é alias depreciado de `defaultReservedSpace`.
 
 ## Plano da fatia 5 (discos)
 
@@ -239,6 +291,17 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | `terraform providers schema -json` (azurerm 5.10.0) | `azurerm_managed_disk` com `network_access_policy` e `public_network_access_enabled`, sem depreciação |
 | `terraform fmt -check`; `validate`; `plan -out=discos.tfplan`; `show -json` | formato ok; `The configuration is valid`; 2 a criar, 0 a alterar, 0 a destruir; 2 `create` e 29 `no-op`; nenhuma referência ao grupo das VMs |
 | `systemctl cat apt-daily-upgrade.timer` (VM1) | `OnCalendar=*-*-* 6:00`, `RandomizedDelaySec=60m`, `Persistent=true` |
+| `az disk show` (P15 e P20, 28/10); activity log do `rg-prod-brsouth-001` desde 27/10 14:00 | `ResourceNotFound` nos dois; `disks/delete` do P15 de 22:40:53 a 22:41:12 UTC de 27/10 (Portal) e do P20 de 21:07:14 a 21:07:30 de 28/10 (Azure CLI); VM1 desalocada às 23:00:35 de 27/10 e ligada às 09:01:31 de 28/10 |
+| `lsblk`; `findmnt /data`; `journalctl -b`; `docker info` (VM1, 28/10) | só a lun1, `/data` no P10; `data.mount` 09:02:04, containerd 09:02:16, docker 09:02:33; `docker info` igual ao de 27/10 |
+| GET dos agendamentos de auto-shutdown; activity log | VM1 `Disabled` (`2000`) desde 20:52:39 UTC de 28/10, pelo Portal; VM2 `Enabled` (`1900`) |
+| `certbot revoke`; CRL `ye1.c.lencr.org/6.crl` de 22:07:35 | `POST /acme/revoke-cert` 200; série `05AAA4E3…F105` revogada às 21:26:08, `Cessation Of Operation` |
+| `az network nsg rule list` (depois) | 100 (SSH), 1010 (80) e 1020 (443), as duas com destino `10.0.0.5` |
+| `ss -tlnH`; `dpkg-query` (VM1, depois da limpeza) | nada na 111; rpcbind, `nfs-common`, aznfs, certbot do apt e 11 órfãos fora; 0 órfãos restantes |
+| `journalctl -u systemd-journald`; `docker info`; `docker buildx inspect` | journal `570.3M, max 1.0G`; `LoggingDriver local`; GC com `Reserved Space 20GiB` (antes, `Max Used Space 93.13GiB`) |
+| `dig CAA` nos autoritativos; `curl` e `openssl s_client` pelo DNS público | CAA com `accounturi=…/acct/3924918922` e `validationmethods=http-01`; `upload` NXDOMAIN; 503 com `verify=0`, HSTS, TLS 1.2 e 1.3, handshake recusado para outro nome |
+| `az monitor log-analytics query` (as 3 consultas dos alertas) | compilam; a do silêncio devolve 1 linha às 19:47 de Brasília (quarta, VM1 sem agente) |
+| Retail Prices API (BRL, brazilsouth, Azure Monitor, Alerts) | regra de log a 15 min R$ 2,6097, série extra R$ 0,2610; a 5 min, R$ 7,8291 e R$ 0,7829; série de métrica R$ 0,5219 depois de 10 grátis |
+| `terraform fmt`; `validate`; `plan -out=fatias6-7.tfplan`; `show -json` | formato ok; válido; 30 a criar, 1 a alterar, 0 a destruir; regras atuais da política iguais; nenhum recurso de VM ou rede |
 
 ## O que não foi possível verificar
 
@@ -247,6 +310,10 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
 - Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Fica para os testes da fatia 8.
+- Se o `InstanceName` do contador de disco do agente no Linux é o ponto de montagem, como as consultas dos alertas supõem. Confere-se na tabela `Perf` depois de instalar o agente; o teste de disparo da fatia 8 confirma.
+- Se a regra `AgentSettings` limita mesmo o cache do agente no Linux (recurso que aparece como preview).
+- A renovação do certificado novo, de verdade ou por `certbot renew --dry-run`: o dry-run usa a conta de staging, que o CAA atual não permite.
+- Se o `Connect-AzAccount -Identity` do runbook funciona com o papel só na VM1, sem papel na subscrição.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
@@ -258,8 +325,13 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **A gravação de blob inclui a troca de camada.** O Set Blob Tier exige `blobs/write` (learn.microsoft.com, página da operação Set Blob Tier, lida em 27/10), e o papel sem exclusão precisa dessa ação. Uma identidade com o papel poderia mudar a camada de uma WSI à mão; a regra (`CLAUDE.md`, storage da v3) deixa isso só para o ciclo de vida, então o código das Fases 4 e 5 não pode chamar Set Blob Tier. Mudar a camada não altera a WSI.
 - **Rede pública aberta nas contas, no Key Vault e no Log Analytics.** O que protege é a identidade: sem chave compartilhada, sem acesso anônimo (exceto o site do status, por desenho) e com retenção legal nas WSIs. Uma credencial do Entra ID vazada alcança o endpoint de qualquer rede.
 - **Alertas que disparam com o trabalho normal.** O `storage-write` dispara em todo apply que mude uma conta, e o `role-assignment` em toda atribuição de papel, inclusive as das próximas fatias. Cada um manda e-mail ao Pedro, que confere se o apply era dele.
+- **CAA preso a uma conta ACME.** A chave da conta fica só em `/etc/letsencrypt` na VM1, sem backup. Se ela se perder, a renovação falha até o Pedro mudar o CAA na Cloudflare. O HSTS de 1 ano também obriga o nome a ficar em HTTPS.
+- **Teto de cache do agente em preview e VM2 com o `/` em 69% de 29G.** No pior caso (agente sem rede), o cache de até 4.000 MB leva o `/` da VM2 para perto de 85%; os alertas de disco avisam em 80%.
+- **Extensão `log-analytics` do `az`, em preview, instalada sozinha** pelo `az monitor log-analytics query` às 22:47 UTC, sem autorização pedida. Fica até o Pedro decidir.
 - **Auto-shutdown da VM1 desligado desde 28/10, 20:52 UTC.** Até ser religado, a VM1 fica ligada sem horário, a R$ 3,19/h. A sessão 6 pede a autorização para religá-lo às 23:00 de Brasília (decisão 3) no fim dela.
 
 ## Decisões pedidas ao Pedro
 
-Nenhuma decisão.
+1. Pedido escrito para a regra `backup-dump-35d` na política de ciclo de vida da `pathsolwsiv3` (`CLAUDE.md`), junto com o apply do `fatias6-7.tfplan`.
+2. Padrão 27 com PowerShell 7.6 no lugar do 7.4, que perde o suporte upstream em 10/11/2026.
+3. Extensão `log-analytics` do `az`: manter ou remover.
