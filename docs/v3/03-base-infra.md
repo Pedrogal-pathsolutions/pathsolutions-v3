@@ -85,6 +85,7 @@ Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md`, seção "Sessão
 6. Leitura de documentação em workflow (3 tópicos, só fontes oficiais, sem comando no Azure), para o runbook e para a fatia 7.
 7. Fatia 7: disco do banco na lun2 da VM1, XFS em `/srv/banco` (`nofail`, ponto de montagem imutável no disco de SO), já no `Perf` e nos alertas de disco. Registro em `docs/operacao/2026-10-29-fatia7-banco.md`.
 8. Auto-shutdown da decisão 3, autorizado no fim da sessão: VM1 de volta às 23:00 e VM2 às 23:30, conferidos por GET.
+9. `az logout` às 02:45:29 UTC (decisão 4). A próxima sessão começa conferindo o ciclo real da VM1 (journal do boot anterior, `findmnt /srv/banco`, job das 06:00 de 30/10) e depende de o Pedro entrar no `az`.
 
 ## Plano das fatias 6 e 7 (Terraform)
 
