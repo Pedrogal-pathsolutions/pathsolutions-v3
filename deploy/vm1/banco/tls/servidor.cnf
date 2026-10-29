@@ -1,0 +1,16 @@
+# Plan 7: self-signed certificate for TLS inside the VNet. Clients pin it
+# (sslmode=verify-full, sslrootcert = this certificate).
+[req]
+prompt = no
+distinguished_name = dn
+x509_extensions = servidor
+
+[dn]
+CN = pathsol-banco-v3
+
+[servidor]
+basicConstraints = critical, CA:FALSE
+keyUsage = critical, digitalSignature
+extendedKeyUsage = serverAuth
+subjectAltName = IP:10.0.0.5, IP:127.0.0.1, DNS:localhost
+subjectKeyIdentifier = hash

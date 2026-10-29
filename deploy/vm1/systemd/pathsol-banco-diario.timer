@@ -1,0 +1,11 @@
+# VM1 starts at 06:00 on weekdays; Persistent runs a missed 06:00 at boot,
+# once a day.
+[Unit]
+Description=PathSolutions v3 backup diario do banco
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 America/Sao_Paulo
+Persistent=true
+
+[Install]
+WantedBy=timers.target

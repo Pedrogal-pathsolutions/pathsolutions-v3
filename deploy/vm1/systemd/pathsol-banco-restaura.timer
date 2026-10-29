@@ -1,0 +1,11 @@
+# Monthly; a 1st on a weekend runs at Monday's boot, so the gap stays under
+# the 35 days the check allows.
+[Unit]
+Description=PathSolutions v3 teste de restauracao do banco
+
+[Timer]
+OnCalendar=*-*-01 10:00:00 America/Sao_Paulo
+Persistent=true
+
+[Install]
+WantedBy=timers.target

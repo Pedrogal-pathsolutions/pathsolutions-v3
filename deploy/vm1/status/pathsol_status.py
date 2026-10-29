@@ -7,6 +7,7 @@
 Signs in with VM1's system identity, which may write only in $web.
 """
 import datetime
+import email.utils
 import json
 import sys
 import time
@@ -52,6 +53,7 @@ def put_status(doc):
         headers={
             "Authorization": f"Bearer {token}",
             "x-ms-version": "2024-11-04",
+            "x-ms-date": email.utils.formatdate(usegmt=True),
             "x-ms-blob-type": "BlockBlob",
             "x-ms-blob-content-type": "application/json",
             "x-ms-blob-cache-control": "no-cache",

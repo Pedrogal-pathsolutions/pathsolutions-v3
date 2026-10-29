@@ -1,0 +1,10 @@
+# Plan 7: pgBackRest backup (full weekly, differential otherwise) and pg_dump.
+# Ordered after the database without pulling it in: a database stopped for
+# maintenance stays stopped, and the run logs FALHA.
+[Unit]
+Description=PathSolutions v3 backup diario do banco
+After=pathsol-banco.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pathsol-banco diario

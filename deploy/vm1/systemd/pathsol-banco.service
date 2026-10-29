@@ -1,0 +1,32 @@
+# Plan 7: PostgreSQL in a container, data on its own disk. After docker and
+# the /srv/banco mount, so at shutdown it stops first, with up to 120 s for a
+# clean stop, before docker stops and before the disk unmounts (on 29/10 the
+# two went down in parallel).
+[Unit]
+Description=PathSolutions v3 PostgreSQL
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+RequiresMountsFor=/srv/banco
+
+[Service]
+# A stopped container left by a crash keeps the name; a running one stays.
+ExecStartPre=-/usr/bin/docker rm pathsol-banco
+# Host network: the address list in postgresql.conf is what listens. The
+# postmaster is shielded from the OOM killer; its children go back to 0.
+ExecStart=/usr/bin/docker run --rm --pull never --name pathsol-banco \
+    --network host --shm-size 1g \
+    --oom-score-adj -1000 \
+    -e PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj -e PG_OOM_ADJUST_VALUE=0 \
+    -v /srv/banco/postgresql:/var/lib/postgresql \
+    -v /srv/banco/pgbackrest-spool:/var/spool/pgbackrest \
+    -v /etc/pathsol/banco:/etc/pathsol/banco:ro \
+    -v /etc/pathsol/banco/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro \
+    pathsol-banco:18.6-2.60.0 postgres -c config_file=/etc/pathsol/banco/postgresql.conf
+ExecStop=/usr/bin/docker stop --time 120 pathsol-banco
+TimeoutStopSec=150
+Restart=on-failure
+RestartSec=10s
+
+[Install]
+WantedBy=multi-user.target

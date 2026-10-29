@@ -1,0 +1,8 @@
+[Unit]
+Description=PathSolutions v3 verificacao do banco e dos certificados
+
+[Timer]
+OnCalendar=*:0/15
+
+[Install]
+WantedBy=timers.target

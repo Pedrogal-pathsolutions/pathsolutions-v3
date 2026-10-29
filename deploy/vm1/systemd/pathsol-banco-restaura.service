@@ -1,0 +1,12 @@
+# Plan 7: restore test, monthly, in a scratch area on /data that the test
+# removes at the end.
+[Unit]
+Description=PathSolutions v3 teste de restauracao do banco
+After=pathsol-banco.service pathsol-banco-diario.service
+RequiresMountsFor=/data
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pathsol-banco restaura
+StateDirectory=pathsol-banco
+StateDirectoryMode=0700

@@ -1,0 +1,11 @@
+# Plan 7: archiving, backup and dump age, certificates and the monthly
+# restore test, to syslog local0 for the two log alerts.
+[Unit]
+Description=PathSolutions v3 verificacao do banco e dos certificados
+After=pathsol-banco.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pathsol-banco verifica
+StateDirectory=pathsol-banco
+StateDirectoryMode=0700
