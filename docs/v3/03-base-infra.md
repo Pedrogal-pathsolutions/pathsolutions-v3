@@ -12,7 +12,7 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
-| 6. VMs | quase feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Falta o auto-shutdown (decisão 3), no fim da sessão 7, e duas provas no próximo ciclo real da VM1: o status no desligamento e o runbook novo ligando a VM1 desalocada. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
+| 6. VMs | quase feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Auto-shutdown da decisão 3 desde 29/10: VM1 às 23:00 e VM2 às 23:30. Faltam duas provas no ciclo real da VM1 de 29 para 30/10: o status no desligamento e o runbook novo ligando a VM1 desalocada. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
 | 7. Postgres, backup e restauração | apply feito e conferido (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps); falta todo o resto |
 | 8. Testes | não começada |
 
@@ -83,6 +83,8 @@ Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md`, seção "Sessão
 4. Unit do status na VM1, com 8 testes do cálculo de volta e o teste de `start`, `stop` e `start` lido no endpoint público.
 5. Padrão 27: ambiente PowerShell 7.6 e runbook novo `pathsol-ligar-vm1-v3` (o `TurnOn-VMs`, `PowerShell72`, recusou o ambiente novo), testado, publicado e ligado à agenda `TurnOn-VMs`; o vínculo antigo saiu e o Virtual Machine Contributor da automação também. O ambiente 7.6 roda o build `7.6.0-preview.5`; o Pedro mandou seguir.
 6. Leitura de documentação em workflow (3 tópicos, só fontes oficiais, sem comando no Azure), para o runbook e para a fatia 7.
+7. Fatia 7: disco do banco na lun2 da VM1, XFS em `/srv/banco` (`nofail`, ponto de montagem imutável no disco de SO), já no `Perf` e nos alertas de disco. Registro em `docs/operacao/2026-10-29-fatia7-banco.md`.
+8. Auto-shutdown da decisão 3, autorizado no fim da sessão: VM1 de volta às 23:00 e VM2 às 23:30, conferidos por GET.
 
 ## Plano das fatias 6 e 7 (Terraform)
 
@@ -124,6 +126,15 @@ Escolhas desta sessão, fora do texto do plano:
 4. VM1: unit do status (seção 18), com teste.
 5. Runbook (padrão 27): ambiente de execução novo e código novo; depois, retirar o Virtual Machine Contributor da automação no grupo das VMs.
 6. Fatia 7: anexar o `pathsol-banco-v3` na VM1, XFS em `/srv/banco`, Postgres, pgBackRest, `pg_dump`, script de verificação e teste de restauração.
+
+**Resto da fatia 7 (próxima sessão).** O disco já está em `/srv/banco` (XFS, `nofail`, ponto de montagem imutável). Fatos lidos em 29/10 (workflow, só fontes oficiais), que valem para o código:
+- PostgreSQL 18.6 (13/08/2026); a próxima versão menor sai em 12/11/2026. Imagem `postgres:18.6-trixie`. No 18, o volume é `/var/lib/postgresql` e o PGDATA `/var/lib/postgresql/18/docker`: monta-se ali um subdiretório do disco (dono 999, modo 700), como a doc do Postgres manda. O `initdb` do 18 liga data checksums por padrão.
+- Parada: a imagem declara `STOPSIGNAL SIGINT` (fast). O `docker stop` espera 10 s, e o `shutdown-timeout` do dockerd é de 15 s; os 120 s da seção 7 pedem `--stop-timeout` e `shutdown-timeout`, e como os dois interagem no desligamento não foi verificado.
+- TLS: `ssl=on`, mínimo TLS 1.2 por padrão; chave do UID 999 com 0600 (ou root com 0640 e grupo 999); `hostssl` no `pg_hba.conf`, no lugar da linha `host` que a imagem grava.
+- OOM: `--oom-score-adj -1000` no container, com `PG_OOM_ADJUST_FILE=/proc/self/oom_score_adj` e `PG_OOM_ADJUST_VALUE=0` para os filhos voltarem a 0 (doc do PG 18); o Docker desaconselha valor muito negativo. `/dev/shm` do container tem 64 MB por padrão (`--shm-size`).
+- pgBackRest 2.60.0 numa imagem derivada da oficial (`pgbackrest=2.60.0-1.pgdg13+1`, sha256 do `.deb` `609dae5e…ab60`), porque o `archive_command` roda no container do Postgres; desde a 2.59 ele não roda como root. `repo1-type=azure`, `repo1-azure-key-type=auto` (IMDS sem client id; experimental segundo o mantenedor, issue #2741), `repo1-path=/pgbackrest`, `repo-bundle=y`, `archive-async=y` com spool local e `archive-push-queue-max` para o teto de WAL (passado o teto, o PITR quebra até um backup novo). Retenção: `repo1-retention-full-type=time`, `repo1-retention-full=35`, `repo1-retention-history=35`. O expire apaga em lote (Blob Batch), o que o `containers/write` do papel cobre. Se o IMDS responde de dentro do container não foi verificado: confere-se com `pgbackrest check`.
+- `pg_dump` sem azcopy: Put Block e Put Block List com token do IMDS (o Put Blob vai até 5.000 MiB) e `If-None-Match: *`. A unit do status não manda `x-ms-date`, que a doc do Put Blob lista como obrigatório; o serviço aceitou, e a correção entra com o código do dump.
+- Vigilância: idade do último backup pelo `pgbackrest info --output=json` (`timestamp.stop`) e do último WAL pela `pg_stat_archiver`, no syslog `local0`, mais os dois alertas de log do banco (plano novo).
 
 Fatos conferidos na documentação em 28/10, que valem para os passos seguintes:
 - pgBackRest 2.60.0 (18/10/2026; o PGDG de Debian trixie tem `2.60.0-1.pgdg13+1`) autentica no Blob com `repo-azure-key-type=auto` desde a 2.58.0, ainda experimental. Ele não escolhe a identidade: usa a padrão do IMDS, que na VM1 é a do sistema. A 2.60.0 faz o restore parar com erro se uma página tiver checksum inválido.
@@ -351,8 +362,13 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Teto de cache do agente em preview e VM2 com o `/` em 71% de 29G.** O agente ocupa ~0,85 GB em cada VM. No pior caso (agente sem rede), o cache de até 4.000 MB e a fila do rsyslog, de até 1 GB, levam o `/` da VM2 para perto de 88%; os alertas de disco avisam em 80%.
 - **PowerShell 7.6 do Automation em build preview.** O teste do runbook rodou com `7.6.0-preview.5`, embora a doc diga GA desde julho de 2026. O código só usa `Invoke-RestMethod` e `Invoke-WebRequest`; trocar de ambiente é um PATCH no runbook novo.
 - **Chaves da conta de automação no estado.** O data source `azurerm_automation_account` chama `listKeys` em todo plan, como as contas de storage e o Log Analytics.
-- **Auto-shutdown da VM1 desligado desde 28/10, 20:52 UTC.** Até ser religado, a VM1 fica ligada sem horário, a R$ 3,19/h. A sessão 6 pede a autorização para religá-lo às 23:00 de Brasília (decisão 3) no fim dela.
+- **Primeira partida da VM1 pelo runbook novo.** Se ele falhar em 30/10, às 06:00, a VM1 fica desalocada até alguém ligá-la. O alerta `pathsol-vm1-silencio-v3` avisa a partir das 06:20; a volta é ligar pelo Portal e, se for o papel, recriar o Virtual Machine Contributor na automação.
 
 ## Decisões pedidas ao Pedro
 
-Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` e pediu por escrito a regra `backup-dump-35d`; o padrão 27 usa PowerShell 7.6; a extensão `log-analytics` saiu e o `az` não instala mais extensões sozinho (`extension.use_dynamic_install=no`). Pendente para o fim da noite: religar o auto-shutdown da VM1 às 23:00 e mudar o da VM2 para 23:30, com autorização na hora.
+Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` e pediu por escrito a regra `backup-dump-35d`; o padrão 27 usa PowerShell 7.6; a extensão `log-analytics` saiu e o `az` não instala mais extensões sozinho (`extension.use_dynamic_install=no`).
+
+Respondidas na sessão 7 (29/10): runbook novo em vez de trocar o tipo do `TurnOn-VMs`; seguir no 7.6 com o build preview; teto de 1G no journal da VM2, apagando os arquivos mais antigos; chaves de host da VM2 pelo Run Command, e a edição do alias pelo próprio Pedro.
+
+Pedidas:
+1. **Runbook `TurnOn-VMs` antigo:** publicado, sem agenda, com código do legado (`PowerShell72`, sem suporte desde 30/09). Recomendação: apagar depois que o runbook novo ligar a VM1 desalocada em 30/10, às 06:00. Exclusão só com autorização na hora.

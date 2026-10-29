@@ -17,6 +17,6 @@ Autorização do Pedro (~02:28 UTC, no chat): a sequência de 6 passos, parando 
    - `mkdir /srv/banco` e `chattr +i /srv/banco` antes de montar: com o disco ausente, nada se grava no disco de SO (`touch` recusado). A doc do Postgres 18 também manda pôr o diretório de dados dentro do ponto de montagem, para o banco falhar limpo se o volume sair (`creating-cluster`, lida em 29/10).
    - fstab: `UUID=be0703f5-dd5b-4483-92e3-781563c72f5e /srv/banco xfs defaults,nofail 0 2` (linha 7), como a doc da Azure para disco de dados; sem `discard`, porque o `fstrim.timer` roda e a mesma doc avisa do custo do `discard`. A cópia do fstab antigo ficou em `/tmp`.
    - Resultado: rc=0 às 02:31:09, sem nenhuma porta parada; `mount /srv/banco`: `/dev/sdc xfs rw,relatime,inode64,logbufs=8,logbsize=32k,noquota`.
-6. Evidência (02:31 UTC): `findmnt --verify --verbose` sem aviso na linha do `/srv/banco` e saída 0; `df`: 64G, 1,3G usados (reserva interna do XFS); a raiz montada `755 root:root`, sem o bit imutável; `srv-banco.mount` ativo.
+6. Evidência (02:31 UTC): `findmnt --verify --verbose` sem aviso na linha do `/srv/banco` e saída 0; `df`: 64G, 1,3G usados (reserva interna do XFS); a raiz montada `755 root:root`, sem o bit imutável; `srv-banco.mount` ativo. No workspace, o `Perf` da VM1 traz o `/srv/banco` desde a amostra das 02:32:00 (2%), já coberto pelos alertas de disco.
 
 Não testado: o boot com o disco novo. A prova é o próximo ciclo real da VM1 (auto-shutdown e runbook novo), conferida no journal e no `findmnt` depois da partida.
