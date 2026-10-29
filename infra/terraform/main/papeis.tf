@@ -101,7 +101,9 @@ resource "azurerm_role_definition" "backup_banco" {
 # id, and the tenant-level one makes every plan replace the assignments.
 data "azurerm_role_definition" "builtin" {
   for_each = toset([
+    "Storage Blob Data Owner",
     "Storage Blob Data Reader",
+    "Storage Blob Delegator",
     "Storage Queue Data Message Sender",
     "Storage Queue Data Reader",
   ])

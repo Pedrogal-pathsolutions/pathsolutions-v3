@@ -13,8 +13,8 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
 | 6. VMs | feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Auto-shutdown da decisão 3 desde 29/10: VM1 às 23:00 e VM2 às 23:30. No ciclo real de 28 para 29/10, o status gravou `down` e `up`, e o runbook novo ligou a VM1 desalocada; o `TurnOn-VMs` antigo foi apagado (29/10). Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
-| 7. Postgres, backup e restauração | apply feito e conferido (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps); `/srv/banco` conferido no boot de 29/10; falta o resto |
-| 8. Testes | não começada |
+| 7. Postgres, backup e restauração | quase feita (29/10). PostgreSQL 18.6 em container na VM1, TLS obrigatório, `pg_hba` só com a VM2 na rede; pgBackRest com a identidade da VM1 (full semanal, diferencial diário, WAL a cada 5 min no máximo); `pg_dump` diário; verificação a cada 15 min no syslog; restauração testada duas vezes e agendada todo mês. Faltam os 2 alertas de log do banco, no plano `fatias7-8.tfplan`. Registro em `docs/operacao/2026-10-29-fatia7-banco.md` |
+| 8. Testes | plano da conta descartável da seção 6.3 pronto (`fatias7-8.tfplan`); já provados na fatia 7: restauração, `oom_score_adj` e IMDS no container; o resto não começou |
 
 ## O que foi feito
 
@@ -94,6 +94,53 @@ Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md` e `docs/operacao/
 2. Ciclo real conferido: a desalocação chega ao convidado como desligamento ordenado (`hv_utils`, ~3,5 s até o poweroff); o status gravou `down` (HTTP 201) antes de a rede parar e `up` às 06:01:57; o runbook novo ligou a VM1 desalocada (job `Completed`, `start/action` `Succeeded` pela identidade da automação, que só tem o papel de ligar a VM1); o `/srv/banco` montou limpo, antes do containerd e do docker.
 3. Achado: no desligamento, o `/srv/banco` desmontou em paralelo com a parada do docker. A unit do Postgres leva `RequiresMountsFor=/srv/banco` e `After=docker.service`.
 4. Com autorização do Pedro, o runbook `TurnOn-VMs` antigo foi apagado (11:20 UTC). Fatia 6 concluída.
+5. Fatia 7, autorizada como sequência de 8 passos (~11:40 UTC), com a condição do Pedro de que o `pg_hba` tenha só `hostssl` e `scram-sha-256`, com o IP privado da VM2 como única origem de rede. Três paradas, cada uma corrigida com autorização: (a) o build parou na porta do UID 999, que na VM1 é do coletor do agente de monitoramento; (b) o `stanza-create` parou porque a imagem oficial não traz o `ca-certificates`; (c) o log mostrou o servidor reiniciando inteiro 4 vezes, porque o processo assíncrono do pgBackRest, órfão, era herdado pelo postmaster como PID 1 e saía com erro. Correção de (c): `docker run --init`.
+6. Resultado: banco no ar, backup full e diferencial, dois dumps e dois testes de restauração aprovados; a verificação roda a cada 15 min, e as linhas chegam ao Log Analytics (`SeverityLevel error` para as falhas).
+7. Plano `fatias7-8.tfplan`: os 2 alertas de log do banco e a conta descartável dos testes de proteção (seção 6.3 do plano). Resumo em "Plano das fatias 7 e 8".
+
+## Plano das fatias 7 e 8 (Terraform)
+
+`terraform plan -out=fatias7-8.tfplan` em 29/10, ~12:20 UTC: **10 a criar, 0 a alterar, 0 a destruir.** Os 61 recursos existentes aparecem como `no-op`; nenhum recurso de VM, disco ou rede muda (conferido no JSON do plano). sha256: `e2920e2ed54b54168817440c1c29264298539427a49c36984e0f8414642b6892`.
+
+| Recurso | O quê | Custo/mês |
+|---|---|---:|
+| `azurerm_monitor_scheduled_query_rules_alert_v2.banco_falha` | `pathsol-banco-falha-v3` (sev. 1): linha `SeverityLevel == "error"` do `pathsol-banco` no `Syslog` local0 da VM1, janela de 30 min, a cada 15 min, com estado | R$ 2,61 |
+| `azurerm_monitor_scheduled_query_rules_alert_v2.banco_silencio` | `pathsol-banco-silencio-v3` (sev. 2): nenhuma linha do `pathsol-banco` em 40 min, de segunda a sexta, das 06:40 às 22:50 de Brasília | R$ 2,61 |
+| `azurerm_storage_account.teste` | `pathsoltestev3`: conta descartável dos testes de proteção (seção 6.3 do plano), StorageV2, Standard LRS, Hot, TLS 1.2, sem chave compartilhada, sem acesso anônimo, rede pública como a `pathsolwsiv3`; sem `prevent_destroy` e sem trava, porque o Pedro a apaga depois dos testes | < R$ 0,01 (alguns KB por alguns dias; operações em centavos) |
+| `azurerm_storage_container.teste` e `azapi_resource_action.teste_legal_hold` | `wsi-teste`, privado, com retenção legal (tag `teste`) pelo mesmo caminho dos containers de WSI | R$ 0 |
+| `azurerm_storage_management_policy.teste` | regra `teste-cold`: Cold 0 dias depois da criação, só em `wsi-teste`, para o teste de camada sob retenção | R$ 0 |
+| `azurerm_role_assignment.teste` × 4 | VM1: papel sem exclusão no `wsi-teste` (`teste-protecao.tf:68`) e `Storage Blob Delegator` na conta (`:74`), porque a chave de delegação é pedida à conta; VM2: `Storage Blob Data Reader` no `wsi-teste` (`:80`); Pedro: `Storage Blob Data Owner` no `wsi-teste` (`:86`), para os passos que apagam | R$ 0 |
+| **Total** | | **~R$ 5,22** |
+
+Preço das regras de log da Retail Prices API (BRL, brazilsouth), lido em 28/10; o plano estimava os mesmos R$ 5,22 para os dois alertas do banco (seção 7).
+
+Escolhas da fatia 7, fora do texto do plano:
+- **Imagem derivada da oficial** (`postgres:18.6-trixie` fixada por digest) com o pgBackRest 2.60.0 (sha256 do `.deb` fixado), o `ca-certificates` (a base não traz CA, e sem ela o pgBackRest não valida o Blob) e o usuário `postgres` com UID e GID 5432: na VM1, o 999 é o `azureotelcollector` e o `systemd-journal`.
+- **`docker run --init`.** O `archive-push` assíncrono deixa um processo órfão; com o postmaster como PID 1, cada saída com erro desse processo derrubava o servidor inteiro (4 vezes em 29/10). Com o `docker-init` como PID 1, o órfão fica com ele.
+- **Rede do host:** o que escuta é o `listen_addresses` (127.0.0.1 e 10.0.0.5). O `pg_hba` tem só a VM2 como origem de rede, a pedido do Pedro, e o superusuário entra só por socket, sem senha.
+- **Locale do provedor builtin, C.UTF-8:** ordem por código Unicode, que não muda com a glibc, então um backup físico restaura numa imagem mais nova sem reindexar. A ordenação em português, quando a Fase 5 precisar, vem por colação ICU na consulta ou na coluna (não verificado).
+- **TLS autoassinado** de 730 dias (até 28/10/2028), fixado pelos clientes com `sslmode=verify-full`.
+- **Limiar do certificado:** 21 dias (seção 4.5) ou 1/4 da validade, o que for menor. Com os certificados de 64 dias do Let's Encrypt em 2027, a renovação normal acontece com ~21 dias, e o limiar fixo dispararia sempre.
+- **Rotina diária única** às 06:00 de Brasília, com `Persistent` (roda na partida quando a VM1 estava desligada): full quando o último full tem 6 dias ou mais, senão diferencial; depois, o `pg_dump`. A verificação tolera backup e dump de até 26 h e, nas 3 primeiras horas depois da partida, um mais antigo (noite e fim de semana).
+- **Dump** (`pg_dumpall --globals-only` e `pg_dump -Fc --compress=zstd` de cada banco) em blocos de 64 MiB, com `If-None-Match: *` no Put Block List; um blob só aparece inteiro, e o marcador `completo` só depois de todos.
+- **Restauração mensal automática** (dia 1, 10:00, `Persistent`), num rascunho em `/data` que o código apaga no fim, com um banco sintético `canario`. A verificação acusa restauração com mais de 35 dias.
+- **WAL descartado:** passado o teto de 8 GiB, o pgBackRest dá o WAL por arquivado e o descarta (texto do `pgbackrest help`). A verificação acusa quando o PostgreSQL conta como arquivado um segmento que o repositório não tem.
+- **`x-ms-date`** na unit do status (pendência do relatório), reinstalada e testada.
+
+Escolhas da fatia 8 neste plano:
+- **Conta descartável em LRS:** a redundância não muda retenção legal, ciclo de vida nem permissões. Os testes de opção C da seção 6.3 (metadado, tag e regra de exclusão) não entram: a decisão 1 ficou com a opção B.
+- **Teste da proteção fora da `pathsolwsiv3`.** Um blob de teste num container de WSI ficaria lá para sempre. Na conta real, as tentativas de apagar container e conta (o Pedro) não deixam resíduo; a sobrescrita de blob vai para a conta descartável, com as mesmas identidades e papéis.
+
+**No apply** disparam, como previsto: `pathsol-storage-write-v3` (conta nova), `pathsol-lifecycle-write-v3` (política nova) e `pathsol-role-assignment-v3` (4 vezes). O `pathsol-banco-falha-v3` só dispara se houver falha nos 30 min anteriores à primeira avaliação; a última foi às 12:05:45 UTC (restauração ainda não feita).
+
+**Depois do apply**, numa pergunta só, com autorização do Pedro:
+1. Conferência: sha256, `terraform plan` sem mudanças e os 10 recursos.
+2. Na conta descartável, pela VM1: SAS de delegação só de criação (`c`) com Put Block e Put Block List e `If-None-Match: *`; segundo Put Block com `c`; versão da SAS e da requisição (seção 4.2). Sobrescrita em blocos de um blob existente sob retenção legal, pela VM1 e pela VM2. Exclusão de blob e de container: VM1 e VM2 recebem 403; o Pedro, como dono dos dados, faz os passos que apagam.
+3. Cold pelo ciclo de vida sob retenção legal, conferido no dia seguinte.
+4. Na conta real, o Pedro tenta apagar um container de WSI e a conta: barrados pela retenção legal e pela trava.
+5. No fim, o Pedro tira a retenção do `wsi-teste` (dispara o `clearLegalHold`; o `terraform plan` deve continuar sem mudanças, porque o azapi não detecta drift) e apaga a conta; o `teste-protecao.tf` sai do código.
+
+Os testes da fatia 8 que não dependem do apply (parada limpa na desalocação, `% Used Space` contra `df`, poller e start em Deallocating, PutMessage na dead-letter, alerta de disco, orçamento e alerta do banco) também vão numa pergunta só.
 
 ## Plano das fatias 6 e 7 (Terraform)
 
@@ -348,6 +395,19 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | activity log da VM1; jobs do Automation (sessão 8) | `deallocate/action` 02:51:14 (Portal, usuário do Pedro); job `pathsol-ligar-vm1-v3` `Completed` 09:01:24–26, `VM1 start: HTTP 202`; `start/action` `Succeeded` 09:02:15 pela identidade `75b93dbe-…`, só com o `pathsol-vm1-ligar-v3` |
 | `journalctl -b 0`; `findmnt /srv/banco`; endpoint do status (sessão 8) | `Ending clean mount` do XFS 09:01:51,74; `srv-banco.mount` antes do containerd e do docker; `up: HTTP 201` 09:01:57; `{"status": "up", …09:01:57…}` |
 | `az rest --method delete` do `TurnOn-VMs`; GET; activity log | rc=0; `ResourceNotFound`; agenda só com o runbook novo; `runbooks/delete` `Succeeded` 11:20:26 |
+| `getent passwd 999`; `getent group 999` (VM1) | `azureotelcollector` e `systemd-journal`; 5432 livre |
+| `docker buildx imagetools inspect postgres:18.6-trixie` | índice `sha256:979bccfd…e0e4`; amd64 `sha256:f4b419e3…db6f`; `STOPSIGNAL SIGINT`; volume `/var/lib/postgresql` |
+| `gpg --verify InRelease`; `sha256sum -c` do `Packages.bz2` (PGDG trixie) | `Good signature`, chave `…7FCC 7D46 ACCC 4CF8`; `OK`; `pgbackrest 2.60.0-1.pgdg13+1`, sha256 `609dae5e…86ab60` |
+| `az network nic list` | VM1 10.0.0.5 e VM2 10.0.0.4, alocação `Dynamic` |
+| `docker build`; `id postgres`; `pgbackrest help` | imagem `sha256:7f04bd26…8f0b` com `ca-certificates 20250419+deb13u1`; UID e GID 5432; `auto` entre os tipos de chave do Azure |
+| `ss -tlnp`; `pg_settings`; `pg_hba_file_rules`; `pg_database` | 5432 só em 127.0.0.1 e 10.0.0.5; `ssl=on`, TLS 1.2, checksums, `archive_mode=on`, 300 s; regras `local all postgres peer` e `hostssl all all 10.0.0.4/32 scram-sha-256`; provedor builtin C.UTF-8 |
+| `psql` com `sslmode=disable` e com `verify-full` | `no pg_hba.conf entry … no encryption`; `… SSL encryption` (o TLS passou) |
+| `/proc/<pid>/oom_score_adj`; `docker top` | `docker-init` e postmaster com -1000, processos do Postgres com 0; `archive-push:async` filho do `docker-init` |
+| `journalctl -u pathsol-banco` | 4 reinícios com `untracked child process … exit code 103` antes do `--init`; nenhum depois |
+| `pgbackrest info`; listagem do `backup-banco` | full `20261029-120528F` (22,7 MB; 2,7 MB no repositório) e um diferencial; WAL de `…0001` em diante; `dump/20261029T120530Z/` e `dump/20261029T120627Z/`, cada um com 3 arquivos e o marcador |
+| `systemctl start pathsol-banco-restaura` (2 vezes) | `OK restauracao: backup com WAL até a linha nova (1 linhas) e dump 20261029T120530Z` e `(2 linhas) … 20261029T120627Z`; rascunho removido |
+| consulta ao `pathsol-logs-v3` (`Syslog`, `ProcessName == "pathsol-banco"`) | `Facility local0`; `SeverityLevel info` e `error`; ingestão em até 1 min 42 s |
+| `terraform fmt -check`; `validate`; `plan -out=fatias7-8.tfplan`; `show -json` | formato ok; válido; 10 a criar, 0 a alterar, 0 a destruir; 61 `no-op`; nenhum recurso de VM, disco ou rede com mudança |
 
 ## O que não foi possível verificar
 
@@ -360,6 +420,10 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se a regra `AgentSettings` limita mesmo o cache do agente no Linux (recurso que aparece como preview).
 - A renovação do certificado novo, de verdade ou por `certbot renew --dry-run`: o dry-run usa a conta de staging, que o CAA atual não permite.
 - O conteúdo do `status.json` gravado no desligamento real: o journal mostra o HTTP 201, mas o `up` da partida sobrescreve o arquivo. O `back_at` fica coberto pelos testes da unit.
+- A parada limpa do Postgres na desalocação real. A prova é o auto-shutdown das 23:00 de 29/10: no log da partida seguinte, `database system was shut down` e nenhum `interrupted`.
+- O arquivamento assíncrono com `--init` diante de uma falha real de rede: a árvore de processos mostra o órfão com o `docker-init`, mas a falha não foi provocada.
+- O teto de 8 GiB da fila de WAL atingido de verdade.
+- A ordenação em português com o provedor builtin; fica para a Fase 5, com colação ICU onde precisar.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
@@ -374,6 +438,10 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Teto de cache do agente em preview e VM2 com o `/` em 71% de 29G.** O agente ocupa ~0,85 GB em cada VM. No pior caso (agente sem rede), o cache de até 4.000 MB e a fila do rsyslog, de até 1 GB, levam o `/` da VM2 para perto de 88%; os alertas de disco avisam em 80%.
 - **PowerShell 7.6 do Automation em build preview.** O teste do runbook rodou com `7.6.0-preview.5`, embora a doc diga GA desde julho de 2026. O código só usa `Invoke-RestMethod` e `Invoke-WebRequest`; trocar de ambiente é um PATCH no runbook novo.
 - **Chaves da conta de automação no estado.** O data source `azurerm_automation_account` chama `listKeys` em todo plan, como as contas de storage e o Log Analytics.
+- **Backups apagáveis de dentro da VM1.** A identidade do sistema da VM1 tem o papel de backup, que apaga blobs no `backup-banco`, porque o expire do pgBackRest precisa disso. Qualquer processo da VM1 obtém o token pelo IMDS; quem tomar a VM1 apaga o banco e os backups. O soft delete do MVP (`CLAUDE.md`) cobre parte disso; até lá, é risco aberto.
+- **IPs privados dinâmicos.** O Postgres escuta em 10.0.0.5, o `pg_hba` aceita só 10.0.0.4, e as regras 80 e 443 do NSG apontam para 10.0.0.5. Se o IP mudar, o Postgres sobe só em 127.0.0.1 e a VM2 perde o banco. Tornar os IPs estáticos é mudança na rede existente, sem custo, e depende do Pedro.
+- **Certificado TLS do banco vence em 28/10/2028.** A verificação avisa 21 dias antes; a troca exige atualizar o certificado fixado no worker.
+- **Imagem do banco congelada.** O 18.7 sai em 12/11/2026; atualizar é refazer o build com o digest novo e rodar o teste de restauração.
 - **Partida da VM1 pelo runbook.** Provada em 29/10. Se um dia falhar, a VM1 fica desalocada até alguém ligá-la; o alerta `pathsol-vm1-silencio-v3` avisa a partir das 06:20, e a volta é ligar pelo Portal.
 
 ## Decisões pedidas ao Pedro
@@ -383,3 +451,6 @@ Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` 
 Respondidas na sessão 7 (29/10): runbook novo em vez de trocar o tipo do `TurnOn-VMs`; seguir no 7.6 com o build preview; teto de 1G no journal da VM2, apagando os arquivos mais antigos; chaves de host da VM2 pelo Run Command, e a edição do alias pelo próprio Pedro.
 
 Respondida na sessão 8 (29/10): o runbook `TurnOn-VMs` antigo foi apagado com autorização na hora, depois de o runbook novo ligar a VM1 desalocada no ciclo real.
+
+Pedida:
+1. **Apply do `fatias7-8.tfplan`** (sha256 `e2920e2e…6b892`): os 2 alertas do banco e a conta descartável da fatia 8. O apply encerra a sessão; a seguinte começa pela conferência e pede, numa pergunta só, os testes da fatia 8.
