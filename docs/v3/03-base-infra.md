@@ -12,8 +12,8 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
-| 6. VMs | em andamento (28/10). VM1 sem Terraform: limpeza da seção 4.5, tetos de logs, nginx e certificado novos. Plano `fatias6-7.tfplan` salvo, com identidade da VM2, papéis, agente e alertas. Faltam o apply, o agente nas duas VMs, a identidade e os tetos da VM2, a unit do status, o runbook e o auto-shutdown. O Pedro desligou o auto-shutdown da VM1 às 20:52 UTC, para a noite ir mais longe; ele é religado às 23:00 de Brasília no fim da noite. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
-| 7. Postgres, backup e restauração | plano salvo no mesmo `fatias6-7.tfplan` (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps) |
+| 6. VMs | quase feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Falta o auto-shutdown (decisão 3), no fim da sessão 7, e duas provas no próximo ciclo real da VM1: o status no desligamento e o runbook novo ligando a VM1 desalocada. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
+| 7. Postgres, backup e restauração | apply feito e conferido (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps); falta todo o resto |
 | 8. Testes | não começada |
 
 ## O que foi feito
@@ -73,6 +73,16 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 5. Fatia 6, VM1, com autorização por ação (registro em `docs/operacao/2026-10-28-fatia6-vms.md`): certificado do legado revogado (conferido na CRL); 80 e 443 só para a VM1; regras 200 a 230 fora; site do legado e cópias, certbot do apt, `/etc/letsencrypt`, rpcbind, `nfs-common`, sobras vazias e 11 órfãos do apt fora; tetos de logs (journald 1G; Docker com driver `local` e cache de build de 20 GiB); nginx novo e certificado de `app.pathsolutions.com.br`, com conta ACME nova sem e-mail e CAA com `accounturi` (o Pedro criou o CAA e apagou o registro `upload`).
 6. Workflow de leitura de documentação (7 tópicos, só fontes oficiais, sem comando no Azure) para o código das fatias 6 e 7. Os fatos que mudaram o código estão em "Plano das fatias 6 e 7".
 7. Código e plano das fatias 6 e 7 juntos, a pedido do Pedro (`fatias6-7.tfplan`).
+
+### Sessão 7 (29/10, a partir das 01:26 UTC)
+
+Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md`, seção "Sessão 7".
+1. O Pedro aplicou o `fatias6-7.tfplan` (01:23:19 a 01:24:18 UTC). Conferência: sha256 igual; os 31 recursos com os atributos do plano; nenhuma falha no activity log. O primeiro `terraform plan` depois do apply queria recriar as 4 atribuições de papel interno por diferença de formato do ID (mesmo GUID). Corrigido no data source (`papeis.tf`, escopo da subscrição); depois, `No changes`, sem mudança no Azure.
+2. Agente na VM1 (1.45.1, atualização automática). O `InstanceName` do `Perf` é o ponto de montagem, como as consultas dos alertas supõem; o `local0` chega à tabela `Syslog`.
+3. VM2, os 8 passos autorizados: identidade nova, partida, chaves de host lidas pelo Run Command, agente com a identidade nova, tetos de logs (o journal tinha 1,1G; saíram 16 arquivos do legado, de 04 a 10/09), ciclo de desalocar e ligar com evidência, desalocada às 02:07:37. O Pedro gravou as chaves no `known_hosts` e ligou a conferência no alias: o risco da chave de host da VM2 fica corrigido.
+4. Unit do status na VM1, com 8 testes do cálculo de volta e o teste de `start`, `stop` e `start` lido no endpoint público.
+5. Padrão 27: ambiente PowerShell 7.6 e runbook novo `pathsol-ligar-vm1-v3` (o `TurnOn-VMs`, `PowerShell72`, recusou o ambiente novo), testado, publicado e ligado à agenda `TurnOn-VMs`; o vínculo antigo saiu e o Virtual Machine Contributor da automação também. O ambiente 7.6 roda o build `7.6.0-preview.5`; o Pedro mandou seguir.
+6. Leitura de documentação em workflow (3 tópicos, só fontes oficiais, sem comando no Azure), para o runbook e para a fatia 7.
 
 ## Plano das fatias 6 e 7 (Terraform)
 
@@ -302,6 +312,18 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | `az monitor log-analytics query` (as 3 consultas dos alertas) | compilam; a do silêncio devolve 1 linha às 19:47 de Brasília (quarta, VM1 sem agente) |
 | Retail Prices API (BRL, brazilsouth, Azure Monitor, Alerts) | regra de log a 15 min R$ 2,6097, série extra R$ 0,2610; a 5 min, R$ 7,8291 e R$ 0,7829; série de métrica R$ 0,5219 depois de 10 grátis |
 | `terraform fmt`; `validate`; `plan -out=fatias6-7.tfplan`; `show -json` | formato ok; válido; 30 a criar, 1 a alterar, 0 a destruir; regras atuais da política iguais; nenhum recurso de VM ou rede |
+| `sha256sum fatias6-7.tfplan`; `terraform plan -detailed-exitcode` (sessão 7) | `073ee8e3…f48f`; saída 2 (4 atribuições a recriar por formato do ID do papel); depois da correção do data source, `No changes`, saída 0 |
+| GET do papel `19e7f393…` sem escopo e no escopo da subscrição | `/providers/Microsoft.Authorization/roleDefinitions/19e7f393…` e `/subscriptions/bd87…/providers/…/19e7f393…`, os dois `Storage Queue Data Reader` |
+| `az identity show`; `az role definition list --custom-role-only`; `az role assignment list --assignee` (VM1, VM2, automação) | `pathsol-id-vm2-v3` com 3 tags; 6 papéis personalizados com as ações do plano; 4 atribuições da VM1, 6 da VM2 e 2 da automação (uma delas o Virtual Machine Contributor antigo), escopos do plano |
+| `az disk show`; GET do `backup-banco`; `management-policy show` | P6 64 GiB `Premium_LRS`, `DenyAll`, rede pública `Disabled`, `Unattached`; container `None`, sem retenção legal; 3 regras, `backup-dump-35d` com `delete` após 35 dias em `backup-banco/dump/` |
+| GET das regras de coleta, das associações, dos 4 alertas de log e do alerta de saúde | `Logical Disk(*)\% Used Space` a 60 s e `local0` para `logs`; `MaxDiskQuotaInMB 4000`; 2 associações por VM; disco 80 (sev. 2) e 90 (sev. 1) por `Computer` e `InstanceName`, silêncio da VM1 (sev. 1) e VM2 ligada (sev. 2), a cada 15 min; Resource Health da VM1 |
+| `az monitor activity-log list --max-events 2000` desde 01:15 UTC | 82 eventos, nenhum `Failed`; 5 `roleDefinitions/write`, 11 `roleAssignments/write`, 1 `managementPolicies/write`; 1 `automationAccounts/listKeys` (data source do Terraform) |
+| `az vm extension set` (VM1 e VM2); `dpkg-query`; `df` | `AzureMonitorLinuxAgent` 1.45, `Succeeded`, atualização automática; `azuremonitoragent 1.45.1-1585`; `/` da VM1 de 56% para 58% e o da VM2 de 69% para 71% |
+| consulta ao `pathsol-logs-v3` pelo ARM (`workspaces/query`, api 2017-10-01) | Heartbeat das duas VMs; `Perf` por ponto de montagem; `Syslog` `local0` das duas |
+| `az vm run-command invoke` (VM2); `ssh -G azure-foundation` | 3 chaves de host e IP 10.0.0.4; depois da edição do Pedro, `stricthostkeychecking true` e `userknownhostsfile /home/azureps/.ssh/known_hosts` |
+| VM2 depois do ciclo (02:01) | boot 01:59:58; 48 holds; `data.mount` antes do containerd e do docker; Docker `local`, `nvidia`, engine igual; T4 595.71.05; journal com teto de 1,0G |
+| `systemctl enable --now`, `stop`, `start` de `pathsol-status`; `curl` no endpoint web | HTTP 201 nos três; `up`, `down` com `back_at` 06:15 de 29/10 e `up`; `application/json` e `no-cache` |
+| REST do Automation (api 2024-10-23) | ambiente `pathsol-ps76-v3` (PowerShell 7.6, Az 15.1.0); PATCH do `TurnOn-VMs` recusado; runbook novo publicado igual ao repositório; teste `Completed` com `7.6.0-preview.5` e HTTP 202; agenda só com o runbook novo |
 
 ## O que não foi possível verificar
 
@@ -310,10 +332,11 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
 - Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Fica para os testes da fatia 8.
-- Se o `InstanceName` do contador de disco do agente no Linux é o ponto de montagem, como as consultas dos alertas supõem. Confere-se na tabela `Perf` depois de instalar o agente; o teste de disparo da fatia 8 confirma.
+- O disparo real dos alertas de disco. O `InstanceName` do `Perf` é o ponto de montagem (conferido em 29/10); o disparo fica para a fatia 8.
 - Se a regra `AgentSettings` limita mesmo o cache do agente no Linux (recurso que aparece como preview).
 - A renovação do certificado novo, de verdade ou por `certbot renew --dry-run`: o dry-run usa a conta de staging, que o CAA atual não permite.
-- Se o `Connect-AzAccount -Identity` do runbook funciona com o papel só na VM1, sem papel na subscrição.
+- O runbook novo ligando a VM1 desalocada: o teste e o job de prova rodaram com a VM1 ligada (`start` aceito, sem efeito). A prova é a partida de 30/10, às 06:00, depois do primeiro auto-shutdown religado.
+- O status gravado no desligamento real (o `ExecStop` durante a desalocação): o teste foi com `systemctl stop`. Confere-se no journal do boot anterior, depois da mesma partida de 30/10.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
@@ -321,12 +344,13 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Login do `az` só durante o Terraform.** Até 27/10, o login do Pedro, com Owner, ficava aberto entre as sessões. Desde o `az logout` desse dia, cada sessão que precisar do `az`, inclusive para leitura, depende de o Pedro entrar de novo.
 - **Chaves das contas no estado do Terraform.** O azurerm chama `listKeys` em cada plan e apply, mesmo com a chave compartilhada desligada, e grava as chaves no estado. Elas só valem se alguém religar a chave compartilhada, o que exige escrita no plano de controle (Owner ou Contributor). As contas de dados da fatia 4 seguem o mesmo caminho. Os alertas de activity log da fatia 4 precisam distinguir esse `listKeys` do Terraform de um uso indevido. O mesmo vale para as chaves do Log Analytics (`workspaces/sharedKeys`), que não servem com a autenticação local desligada.
 - **Kernel e driver da VM2 em hold.** Os 48 pacotes só mudam numa janela de manutenção (padrão 11), com `apt-mark unhold`, atualização e checagem da GPU. Enquanto isso, as correções de segurança do kernel não entram na VM2. A extensão `NvidiaGpuDriverLinux` (handler 1.13.0.2 no disco; 1.9 no modelo, com atualização automática de versão menor) roda `enable` a cada partida (2 s, `Ready`, nas duas de 27/10); o que o script faz sem driver não foi lido.
-- **Chave de host da VM2 não conferida.** O alias `azure-foundation` do ssh tem `StrictHostKeyChecking false`, e cada conexão imprime "Permanently added": a VM1 não confere a chave de host da VM2 (já apontado na Fase 0).
 - **A gravação de blob inclui a troca de camada.** O Set Blob Tier exige `blobs/write` (learn.microsoft.com, página da operação Set Blob Tier, lida em 27/10), e o papel sem exclusão precisa dessa ação. Uma identidade com o papel poderia mudar a camada de uma WSI à mão; a regra (`CLAUDE.md`, storage da v3) deixa isso só para o ciclo de vida, então o código das Fases 4 e 5 não pode chamar Set Blob Tier. Mudar a camada não altera a WSI.
 - **Rede pública aberta nas contas, no Key Vault e no Log Analytics.** O que protege é a identidade: sem chave compartilhada, sem acesso anônimo (exceto o site do status, por desenho) e com retenção legal nas WSIs. Uma credencial do Entra ID vazada alcança o endpoint de qualquer rede.
 - **Alertas que disparam com o trabalho normal.** O `storage-write` dispara em todo apply que mude uma conta, e o `role-assignment` em toda atribuição de papel, inclusive as das próximas fatias. Cada um manda e-mail ao Pedro, que confere se o apply era dele.
 - **CAA preso a uma conta ACME.** A chave da conta fica só em `/etc/letsencrypt` na VM1, sem backup. Se ela se perder, a renovação falha até o Pedro mudar o CAA na Cloudflare. O HSTS de 1 ano também obriga o nome a ficar em HTTPS.
-- **Teto de cache do agente em preview e VM2 com o `/` em 69% de 29G.** No pior caso (agente sem rede), o cache de até 4.000 MB leva o `/` da VM2 para perto de 85%; os alertas de disco avisam em 80%.
+- **Teto de cache do agente em preview e VM2 com o `/` em 71% de 29G.** O agente ocupa ~0,85 GB em cada VM. No pior caso (agente sem rede), o cache de até 4.000 MB e a fila do rsyslog, de até 1 GB, levam o `/` da VM2 para perto de 88%; os alertas de disco avisam em 80%.
+- **PowerShell 7.6 do Automation em build preview.** O teste do runbook rodou com `7.6.0-preview.5`, embora a doc diga GA desde julho de 2026. O código só usa `Invoke-RestMethod` e `Invoke-WebRequest`; trocar de ambiente é um PATCH no runbook novo.
+- **Chaves da conta de automação no estado.** O data source `azurerm_automation_account` chama `listKeys` em todo plan, como as contas de storage e o Log Analytics.
 - **Auto-shutdown da VM1 desligado desde 28/10, 20:52 UTC.** Até ser religado, a VM1 fica ligada sem horário, a R$ 3,19/h. A sessão 6 pede a autorização para religá-lo às 23:00 de Brasília (decisão 3) no fim dela.
 
 ## Decisões pedidas ao Pedro

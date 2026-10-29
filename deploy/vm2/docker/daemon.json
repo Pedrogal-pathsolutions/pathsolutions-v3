@@ -1,0 +1,21 @@
+{
+  "data-root": "/data/docker",
+  "runtimes": {
+    "nvidia": {
+      "path": "nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  },
+  "default-runtime": "nvidia",
+  "log-driver": "local",
+  "log-opts": {
+    "max-size": "10m",
+    "max-file": "3"
+  },
+  "builder": {
+    "gc": {
+      "enabled": true,
+      "defaultReservedSpace": "20GB"
+    }
+  }
+}

@@ -97,13 +97,16 @@ resource "azurerm_role_definition" "backup_banco" {
   assignable_scopes = [data.azurerm_resource_group.v3.id]
 }
 
+# Read at subscription scope: role assignments store the subscription-scoped
+# id, and the tenant-level one makes every plan replace the assignments.
 data "azurerm_role_definition" "builtin" {
   for_each = toset([
     "Storage Blob Data Reader",
     "Storage Queue Data Message Sender",
     "Storage Queue Data Reader",
   ])
-  name = each.key
+  name  = each.key
+  scope = data.azurerm_subscription.current.id
 }
 
 locals {
