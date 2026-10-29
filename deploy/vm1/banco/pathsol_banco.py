@@ -307,8 +307,10 @@ def cert_dates(cert):
     return ssl.cert_time_to_seconds(cert["notBefore"]), ssl.cert_time_to_seconds(cert["notAfter"])
 
 
+# Every container gets --init: pgBackRest detaches processes, and a postmaster
+# running as PID 1 restarts the server when an inherited one fails.
 def initdb(root, network):
-    run(["docker", "run", "--rm", "--pull", "never", "--network", network, "--user", "postgres",
+    run(["docker", "run", "--init", "--rm", "--pull", "never", "--network", network, "--user", "postgres",
          "-v", f"{root}:/var/lib/postgresql", IMAGE, "initdb", "-D", PGDATA, *INITDB_ARGS])
 
 
@@ -441,9 +443,9 @@ def restore_backup(token):
     mounts = ["-v", f"{root}:/var/lib/postgresql", "-v", f"{PGBACKREST_CONF}:/etc/pgbackrest/pgbackrest.conf:ro"]
     name = SCRATCH_CONTAINERS[0]
     # Bridge network, no published port: the same IMDS path the worker uses.
-    run(["docker", "run", "--rm", "--pull", "never", "--user", "postgres", *mounts, IMAGE,
+    run(["docker", "run", "--init", "--rm", "--pull", "never", "--user", "postgres", *mounts, IMAGE,
          "pgbackrest", f"--stanza={STANZA}", "--archive-mode=off", "restore"])
-    run(["docker", "run", "-d", "--rm", "--pull", "never", "--name", name, "--user", "postgres", *mounts, IMAGE,
+    run(["docker", "run", "--init", "-d", "--rm", "--pull", "never", "--name", name, "--user", "postgres", *mounts, IMAGE,
          "postgres", "-c", "listen_addresses=", "-c", "archive_mode=off"])
     wait_ready(name, timeout=600)
     deadline = time.monotonic() + 600
@@ -472,7 +474,7 @@ def restore_dump():
     root = owned_dir(f"{SCRATCH}/cluster-dump")
     initdb(root, "none")
     name = SCRATCH_CONTAINERS[1]
-    run(["docker", "run", "-d", "--rm", "--pull", "never", "--network", "none", "--name", name, "--user", "postgres",
+    run(["docker", "run", "--init", "-d", "--rm", "--pull", "never", "--network", "none", "--name", name, "--user", "postgres",
          "-v", f"{root}:/var/lib/postgresql", "-v", f"{files_dir}:/restauracao:ro", IMAGE, "postgres", "-c", "listen_addresses="])
     wait_ready(name)
     roles = subprocess.run(["docker", "exec", "-u", "postgres", name, "psql", "-X", "-q", "-f", "/restauracao/globais.sql"],
