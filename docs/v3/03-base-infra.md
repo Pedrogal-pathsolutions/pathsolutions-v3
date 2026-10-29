@@ -97,6 +97,7 @@ Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md` e `docs/operacao/
 5. Fatia 7, autorizada como sequência de 8 passos (~11:40 UTC), com a condição do Pedro de que o `pg_hba` tenha só `hostssl` e `scram-sha-256`, com o IP privado da VM2 como única origem de rede. Três paradas, cada uma corrigida com autorização: (a) o build parou na porta do UID 999, que na VM1 é do coletor do agente de monitoramento; (b) o `stanza-create` parou porque a imagem oficial não traz o `ca-certificates`; (c) o log mostrou o servidor reiniciando inteiro 4 vezes, porque o processo assíncrono do pgBackRest, órfão, era herdado pelo postmaster como PID 1 e saía com erro. Correção de (c): `docker run --init`.
 6. Resultado: banco no ar, backup full e diferencial, dois dumps e dois testes de restauração aprovados; a verificação roda a cada 15 min, e as linhas chegam ao Log Analytics (`SeverityLevel error` para as falhas).
 7. Plano `fatias7-8.tfplan`: os 2 alertas de log do banco e a conta descartável dos testes de proteção (seção 6.3 do plano). Resumo em "Plano das fatias 7 e 8".
+8. Verificação automática das 12:15 UTC com os 7 itens `OK`. O Pedro aprovou o plano para aplicar em seguida, o que encerra a sessão.
 
 ## Plano das fatias 7 e 8 (Terraform)
 
@@ -452,5 +453,4 @@ Respondidas na sessão 7 (29/10): runbook novo em vez de trocar o tipo do `TurnO
 
 Respondida na sessão 8 (29/10): o runbook `TurnOn-VMs` antigo foi apagado com autorização na hora, depois de o runbook novo ligar a VM1 desalocada no ciclo real.
 
-Pedida:
-1. **Apply do `fatias7-8.tfplan`** (sha256 `e2920e2e…6b892`): os 2 alertas do banco e a conta descartável da fatia 8. O apply encerra a sessão; a seguinte começa pela conferência e pede, numa pergunta só, os testes da fatia 8.
+Respondida na sessão 8 (29/10, ~12:30 UTC): o Pedro aprovou o `fatias7-8.tfplan` (sha256 `e2920e2e…6b892`) com o escopo e o papel de cada atribuição, e o aplica em seguida pelo SSH, com o Antigravity fechado. A próxima sessão começa pela conferência do apply (sha256, `terraform plan` sem mudanças, os 10 recursos e o activity log) e pede, numa pergunta só, os testes da fatia 8 listados em "Plano das fatias 7 e 8".
