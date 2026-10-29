@@ -3,8 +3,10 @@ resource "azurerm_monitor_action_group" "alertas" {
   resource_group_name = data.azurerm_resource_group.v3.name
   short_name          = "pathsolv3"
 
+  # The portal set this name on 29/10, when Pedro confirmed the address with the
+  # one-time code that action groups now require; renaming it means another write.
   email_receiver {
-    name                    = "pedro"
+    name                    = "Reynaldo_-EmailAction-"
     email_address           = var.alert_email
     use_common_alert_schema = true
   }
@@ -65,6 +67,11 @@ locals {
     }
     storage-write = {
       operation = "Microsoft.Storage/storageAccounts/write"
+      scope     = data.azurerm_resource_group.v3.id
+    }
+    # Turning blob soft delete off or shortening it is a blob service write.
+    blob-service-write = {
+      operation = "Microsoft.Storage/storageAccounts/blobServices/write"
       scope     = data.azurerm_resource_group.v3.id
     }
     storage-delete = {

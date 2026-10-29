@@ -140,6 +140,10 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "vm2_ligada" {
 
 # Plan 18: an unexpected outage of VM1 writes nothing to status.json, so this
 # tells Pedro. Platform causes only; the nightly shutdown is ours. Free.
+# Not Unknown: every deallocation first reports cause Unknown and only seconds
+# later UserInitiated (seen on 29/10, 02:51), so Unknown fired every night. A
+# platform outage is still caught by its PlatformInitiated update, and inside
+# VM1's hours by pathsol-vm1-silencio-v3.
 resource "azurerm_monitor_activity_log_alert" "vm1_saude" {
   name                = "pathsol-vm1-saude-v3"
   resource_group_name = data.azurerm_resource_group.v3.name
@@ -152,7 +156,7 @@ resource "azurerm_monitor_activity_log_alert" "vm1_saude" {
 
     resource_health {
       current = ["Unavailable", "Degraded"]
-      reason  = ["PlatformInitiated", "Unknown"]
+      reason  = ["PlatformInitiated"]
     }
   }
 

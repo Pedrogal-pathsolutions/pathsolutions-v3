@@ -26,7 +26,7 @@ Complementa as skills oficiais de Azure e Terraform instaladas por plugin. Estas
 - Versões de provider fixadas.
 - Segredos no Key Vault. Preferir identidade gerenciada a chaves de acesso.
 - Postgres com SSL obrigatório, sem acesso público aberto, backup automático e restauração testada pelo menos uma vez.
-- Storage da v3: nasce sem soft delete (decisão do Pedro). Ele é ligado no MVP, quando o Pedro confirmar que as lâminas e os casos corretos estão carregados, por Terraform e com plano aprovado.
+- Storage da v3: o soft delete de blobs da `pathsolwsiv3` está ligado desde 29/10/2026, com 14 dias e sem exclusão permanente (decisão do Pedro). Nas outras contas e para containers, ele é ligado no MVP, quando o Pedro confirmar que as lâminas e os casos corretos estão carregados, por Terraform e com plano aprovado. Desligar ou encurtar só com pedido escrito do Pedro e plano aprovado.
 
 ## Procedimento
 

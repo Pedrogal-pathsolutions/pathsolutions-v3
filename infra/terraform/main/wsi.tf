@@ -4,7 +4,7 @@ locals {
   wsi_tenants = toset(["diagnose", "publico"])
 }
 
-# Decision 1: ZRS, Hot on upload. No soft delete until the MVP (CLAUDE.md).
+# Decision 1: ZRS, Hot on upload.
 resource "azurerm_storage_account" "wsi" {
   name                            = "pathsolwsiv3"
   resource_group_name             = data.azurerm_resource_group.v3.name
@@ -20,6 +20,17 @@ resource "azurerm_storage_account" "wsi" {
   # The extension uploads from the labs' own networks with a user delegation
   # SAS, so the endpoint stays reachable; every request needs Entra ID or that SAS.
   public_network_access = "Enabled"
+
+  # Pedro's decision of 29/10, ahead of the MVP: VM1's identity may delete in
+  # backup-banco (pgBackRest expire), so a deleted or overwritten backup stays
+  # recoverable for 14 days. Without permanent delete, nobody can purge it
+  # sooner. Under the legal hold nothing is deleted, so WSIs cost nothing here.
+  blob_properties {
+    delete_retention_policy {
+      days                     = 14
+      permanent_delete_enabled = false
+    }
+  }
 
   tags = merge(local.tags, { componente = "wsi" })
 

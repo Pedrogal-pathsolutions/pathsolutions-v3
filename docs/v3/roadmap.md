@@ -31,6 +31,7 @@ Criado na Fase 2 (20/10/2026) e revisto em 27/10/2026. "Plano" quer dizer `docs/
 | Doar a exportação em branco do Motic (CC0) ao issue #228 do OpenSlide, se o Pedro e a Diagnose autorizarem; se o OpenSlide passar a reconhecer a Motic, a troca de bytes sai do código | Plano, seção 4.1 |
 | Archive e smart tier para as WSIs. Archive é offline e reprocessar o acervo levaria meses; o smart tier não tem compatibilidade documentada com a retenção legal | Plano, seção 6.2 |
 | Exportar o activity log por mais de 90 dias, para guardar a prova de quem tirou uma retenção (custo a estimar) | Plano, seção 6.4 |
+| Logs de recurso do storage (operações do Blob) no Log Analytics, para ver tentativas negadas no plano de dados e as de identidades sem permissão, que o activity log não mostra (custo de ingestão a estimar) | Fase 3, fatia 8 (`docs/v3/03-base-infra.md`, riscos) |
 | Desacoplar o worker do Postgres: resultado no Blob e numa fila de retorno, conciliado pela API. Gatilho: VM2 acima de ~250 h/mês ou fila esperando mais de 20 h. Muda o protocolo de commit da skill `pathsol-contrato-h5` | Plano, seção 8.4; padrão 7 |
 | Serviço de tiles lendo por faixa do Blob, no lugar da cópia integral. Gatilho: acima de ~1.000 lâminas/mês | Plano, seção 6.1 |
 | VM2 Spot (−69% por hora). Exige recriar a VM2 e cota Spot de pelo menos 4 vCPUs | Plano, seção 8.4 |

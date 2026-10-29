@@ -24,7 +24,7 @@ SaaS multitenant de pré-laudo assistido por IA em patologia digital. Dados de p
 - Se a exportação de teste confirmar o cabeçalho Motic (decisão 5), a troca de 6 bytes no SVS da Motic acontece só numa cópia temporária, no disco da VM2 ou no cache de tiles. O original não muda, e a cópia nunca volta ao storage.
 - Retirar a retenção legal ou mudar a política de ciclo de vida só com pedido escrito do Pedro e plano aprovado.
 - Exclusão de WSI só por decisão nova do Pedro, por tenant, com instrução escrita do laboratório e parecer jurídico, e com N nunca menor que 90 dias depois da assinatura. As WSIs do conjunto de treinamento, do teste travado e do aceite ficam fora de qualquer exclusão.
-- O soft delete do storage da v3 é ligado no MVP, quando as lâminas e os casos corretos estiverem carregados (decisão do Pedro).
+- O soft delete de blobs da `pathsolwsiv3` está ligado desde 29/10/2026, com 14 dias e sem exclusão permanente (decisão do Pedro). Nas outras contas e para containers, o soft delete segue para o MVP, quando as lâminas e os casos corretos estiverem carregados. Desligar ou encurtar só com pedido escrito do Pedro e plano aprovado.
 - Você nunca apaga blobs, containers ou storage accounts, nem os do legado. Não são exclusão manual: a execução da política aprovada pelo ciclo de vida do Azure e a limpeza, pelo código aprovado, dos backups do banco além da retenção (35 dias). As travas do `.claude/settings.json` continuam valendo.
 
 ## Gates
