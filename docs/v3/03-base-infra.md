@@ -12,8 +12,8 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 3. Orçamento e action group | feita; falta o disparo real do aviso de 50% (esperado de 1 a 3 dias depois de 27/10). O e-mail do action group chega: o Pedro recebeu os três disparos reais de 27/10, 11:54 UTC |
 | 4. Storage e alertas | feita, em dois applies, a pedido do Pedro (27/10). A: conta de WSI, containers com retenção legal, papel sem exclusão e trava. B: fila e dead-letter, conta do status, Key Vault, Log Analytics, alertas de activity log e da dead-letter, container dos `.h5` e a política de ciclo de vida da decisão 1. Os dois aplicados e conferidos; os testes de proteção e de disparo ficam na fatia 8 |
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
-| 6. VMs | quase feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Auto-shutdown da decisão 3 desde 29/10: VM1 às 23:00 e VM2 às 23:30. Faltam duas provas no ciclo real da VM1 de 29 para 30/10: o status no desligamento e o runbook novo ligando a VM1 desalocada. Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
-| 7. Postgres, backup e restauração | apply feito e conferido (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps); falta todo o resto |
+| 6. VMs | feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Auto-shutdown da decisão 3 desde 29/10: VM1 às 23:00 e VM2 às 23:30. No ciclo real de 28 para 29/10, o status gravou `down` e `up`, e o runbook novo ligou a VM1 desalocada; o `TurnOn-VMs` antigo foi apagado (29/10). Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
+| 7. Postgres, backup e restauração | apply feito e conferido (disco do banco, container de backup, papel do pgBackRest e regra de 35 dias dos dumps); `/srv/banco` conferido no boot de 29/10; falta o resto |
 | 8. Testes | não começada |
 
 ## O que foi feito
@@ -86,6 +86,14 @@ Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md`, seção "Sessão
 7. Fatia 7: disco do banco na lun2 da VM1, XFS em `/srv/banco` (`nofail`, ponto de montagem imutável no disco de SO), já no `Perf` e nos alertas de disco. Registro em `docs/operacao/2026-10-29-fatia7-banco.md`.
 8. Auto-shutdown da decisão 3, autorizado no fim da sessão: VM1 de volta às 23:00 e VM2 às 23:30, conferidos por GET.
 9. `az logout` às 02:45:29 UTC (decisão 4). A próxima sessão começa conferindo o ciclo real da VM1 (journal do boot anterior, `findmnt /srv/banco`, job das 06:00 de 30/10) e depende de o Pedro entrar no `az`.
+
+### Sessão 8 (29/10, a partir das 11:15 UTC)
+
+Registro detalhado em `docs/operacao/2026-10-28-fatia6-vms.md` e `docs/operacao/2026-10-29-fatia7-banco.md`, seções "Sessão 8".
+1. O Pedro entrou no `az` e desalocou a VM1 pelo Portal às 23:51 de 28/10 (02:51:14 UTC), depois da sessão 7. A partida das 06:00 de 29/10 foi o ciclo real.
+2. Ciclo real conferido: a desalocação chega ao convidado como desligamento ordenado (`hv_utils`, ~3,5 s até o poweroff); o status gravou `down` (HTTP 201) antes de a rede parar e `up` às 06:01:57; o runbook novo ligou a VM1 desalocada (job `Completed`, `start/action` `Succeeded` pela identidade da automação, que só tem o papel de ligar a VM1); o `/srv/banco` montou limpo, antes do containerd e do docker.
+3. Achado: no desligamento, o `/srv/banco` desmontou em paralelo com a parada do docker. A unit do Postgres leva `RequiresMountsFor=/srv/banco` e `After=docker.service`.
+4. Com autorização do Pedro, o runbook `TurnOn-VMs` antigo foi apagado (11:20 UTC). Fatia 6 concluída.
 
 ## Plano das fatias 6 e 7 (Terraform)
 
@@ -336,6 +344,10 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | VM2 depois do ciclo (02:01) | boot 01:59:58; 48 holds; `data.mount` antes do containerd e do docker; Docker `local`, `nvidia`, engine igual; T4 595.71.05; journal com teto de 1,0G |
 | `systemctl enable --now`, `stop`, `start` de `pathsol-status`; `curl` no endpoint web | HTTP 201 nos três; `up`, `down` com `back_at` 06:15 de 29/10 e `up`; `application/json` e `no-cache` |
 | REST do Automation (api 2024-10-23) | ambiente `pathsol-ps76-v3` (PowerShell 7.6, Az 15.1.0); PATCH do `TurnOn-VMs` recusado; runbook novo publicado igual ao repositório; teste `Completed` com `7.6.0-preview.5` e HTTP 202; agenda só com o runbook novo |
+| `journalctl -b -1` (sessão 8) | `hv_utils: Shutdown request received` 02:51:14,96; `status.json down: HTTP 201` 02:51:15,69; `srv-banco.mount` e docker parados em paralelo; `systemd-networkd` parado 02:51:18,22; `Journal stopped` 02:51:18,49 |
+| activity log da VM1; jobs do Automation (sessão 8) | `deallocate/action` 02:51:14 (Portal, usuário do Pedro); job `pathsol-ligar-vm1-v3` `Completed` 09:01:24–26, `VM1 start: HTTP 202`; `start/action` `Succeeded` 09:02:15 pela identidade `75b93dbe-…`, só com o `pathsol-vm1-ligar-v3` |
+| `journalctl -b 0`; `findmnt /srv/banco`; endpoint do status (sessão 8) | `Ending clean mount` do XFS 09:01:51,74; `srv-banco.mount` antes do containerd e do docker; `up: HTTP 201` 09:01:57; `{"status": "up", …09:01:57…}` |
+| `az rest --method delete` do `TurnOn-VMs`; GET; activity log | rc=0; `ResourceNotFound`; agenda só com o runbook novo; `runbooks/delete` `Succeeded` 11:20:26 |
 
 ## O que não foi possível verificar
 
@@ -347,8 +359,7 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - O disparo real dos alertas de disco. O `InstanceName` do `Perf` é o ponto de montagem (conferido em 29/10); o disparo fica para a fatia 8.
 - Se a regra `AgentSettings` limita mesmo o cache do agente no Linux (recurso que aparece como preview).
 - A renovação do certificado novo, de verdade ou por `certbot renew --dry-run`: o dry-run usa a conta de staging, que o CAA atual não permite.
-- O runbook novo ligando a VM1 desalocada: o teste e o job de prova rodaram com a VM1 ligada (`start` aceito, sem efeito). A prova é a partida de 30/10, às 06:00, depois do primeiro auto-shutdown religado.
-- O status gravado no desligamento real (o `ExecStop` durante a desalocação): o teste foi com `systemctl stop`. Confere-se no journal do boot anterior, depois da mesma partida de 30/10.
+- O conteúdo do `status.json` gravado no desligamento real: o journal mostra o HTTP 201, mas o `up` da partida sobrescreve o arquivo. O `back_at` fica coberto pelos testes da unit.
 - O `Content-MD5` gravado no blob do estado não bate com o MD5 da cópia local. A explicação provável é a gravação do serial 7, mas não foi conferida byte a byte: o `az storage blob download` para `/dev/stdout` devolveu 0 bytes.
 
 ## Riscos
@@ -363,7 +374,7 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Teto de cache do agente em preview e VM2 com o `/` em 71% de 29G.** O agente ocupa ~0,85 GB em cada VM. No pior caso (agente sem rede), o cache de até 4.000 MB e a fila do rsyslog, de até 1 GB, levam o `/` da VM2 para perto de 88%; os alertas de disco avisam em 80%.
 - **PowerShell 7.6 do Automation em build preview.** O teste do runbook rodou com `7.6.0-preview.5`, embora a doc diga GA desde julho de 2026. O código só usa `Invoke-RestMethod` e `Invoke-WebRequest`; trocar de ambiente é um PATCH no runbook novo.
 - **Chaves da conta de automação no estado.** O data source `azurerm_automation_account` chama `listKeys` em todo plan, como as contas de storage e o Log Analytics.
-- **Primeira partida da VM1 pelo runbook novo.** Se ele falhar em 30/10, às 06:00, a VM1 fica desalocada até alguém ligá-la. O alerta `pathsol-vm1-silencio-v3` avisa a partir das 06:20; a volta é ligar pelo Portal e, se for o papel, recriar o Virtual Machine Contributor na automação.
+- **Partida da VM1 pelo runbook.** Provada em 29/10. Se um dia falhar, a VM1 fica desalocada até alguém ligá-la; o alerta `pathsol-vm1-silencio-v3` avisa a partir das 06:20, e a volta é ligar pelo Portal.
 
 ## Decisões pedidas ao Pedro
 
@@ -371,5 +382,4 @@ Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` 
 
 Respondidas na sessão 7 (29/10): runbook novo em vez de trocar o tipo do `TurnOn-VMs`; seguir no 7.6 com o build preview; teto de 1G no journal da VM2, apagando os arquivos mais antigos; chaves de host da VM2 pelo Run Command, e a edição do alias pelo próprio Pedro.
 
-Pedidas:
-1. **Runbook `TurnOn-VMs` antigo:** publicado, sem agenda, com código do legado (`PowerShell72`, sem suporte desde 30/09). Recomendação: apagar depois que o runbook novo ligar a VM1 desalocada em 30/10, às 06:00. Exclusão só com autorização na hora.
+Respondida na sessão 8 (29/10): o runbook `TurnOn-VMs` antigo foi apagado com autorização na hora, depois de o runbook novo ligar a VM1 desalocada no ciclo real.

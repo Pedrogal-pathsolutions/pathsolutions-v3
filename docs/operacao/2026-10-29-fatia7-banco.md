@@ -20,3 +20,9 @@ Autorização do Pedro (~02:28 UTC, no chat): a sequência de 6 passos, parando 
 6. Evidência (02:31 UTC): `findmnt --verify --verbose` sem aviso na linha do `/srv/banco` e saída 0; `df`: 64G, 1,3G usados (reserva interna do XFS); a raiz montada `755 root:root`, sem o bit imutável; `srv-banco.mount` ativo. No workspace, o `Perf` da VM1 traz o `/srv/banco` desde a amostra das 02:32:00 (2%), já coberto pelos alertas de disco.
 
 Não testado: o boot com o disco novo. A prova é o próximo ciclo real da VM1 (auto-shutdown e runbook novo), conferida no journal e no `findmnt` depois da partida.
+
+## Boot com o disco do banco (sessão 8, 29/10)
+
+Ciclo real de 28 para 29/10 (detalhe em `docs/operacao/2026-10-28-fatia6-vms.md`, "Sessão 8"): o Pedro desalocou a VM1 pelo Portal às 02:51:14 UTC, e o runbook novo a ligou às 09:01. No desligamento, `XFS (sdc): Unmounting Filesystem be0703f5-…` às 02:51:15,10. Na partida, `XFS (sdc): Mounting V5 Filesystem be0703f5-…` e `Ending clean mount` às 09:01:51,74; `srv-banco.mount` ativo às 09:01:51,75, antes do containerd (09:01:57,72) e do docker (09:01:59,20). `findmnt /srv/banco`: `/dev/sdc xfs rw,relatime,inode64,logbufs=8,logbsize=32k,noquota`; `lsblk`: lun2 → `sdc`, 64G, rótulo `banco-v3`. O boot com o disco novo está provado.
+
+Achado para o Postgres: no desligamento, o `/srv/banco` desmontou em paralelo com a parada do docker, sem ordem entre os dois. A unit do Postgres precisa de `RequiresMountsFor=/srv/banco` e `After=docker.service`.
