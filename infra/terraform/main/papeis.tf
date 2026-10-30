@@ -101,6 +101,7 @@ resource "azurerm_role_definition" "backup_banco" {
 # id, and the tenant-level one makes every plan replace the assignments.
 data "azurerm_role_definition" "builtin" {
   for_each = toset([
+    "Key Vault Secrets Officer",
     "Storage Blob Data Owner",
     "Storage Blob Data Reader",
     "Storage Blob Delegator",
@@ -164,6 +165,14 @@ locals {
       vm1-fila-envio = {
         scope     = azurerm_storage_queue.jobs.id
         role_id   = data.azurerm_role_definition.builtin["Storage Queue Data Message Sender"].id
+        principal = local.vm1_principal_id
+      }
+      # The operator script on VM1 writes the worker's database password
+      # (Pedro, 30/10). VM2 reads it with a role on that secret alone, given
+      # once the secret exists, because the vault will also hold the JWT key.
+      vm1-kv-segredos = {
+        scope     = azurerm_key_vault.v3.id
+        role_id   = data.azurerm_role_definition.builtin["Key Vault Secrets Officer"].id
         principal = local.vm1_principal_id
       }
       vm2-autodesalocar = {

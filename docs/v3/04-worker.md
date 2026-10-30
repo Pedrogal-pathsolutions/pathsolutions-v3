@@ -74,7 +74,7 @@ O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
 
 ## Plano do Terraform: container dos pesos e papéis da VM1
 
-`terraform plan -out=fase4-modelos.tfplan` em 30/10, ~17:00 UTC: **5 a criar, 0 a alterar, 0 a destruir.** No JSON do plano, 64 `no-op` e 5 `create`; nenhum recurso com dado, de VM, disco ou rede muda. sha256: `463d7f08f9159d5ddac3c6e6ff86a681e9e32d824e731e8759ab3347494e7caf`.
+`terraform plan -out=fase4-modelos.tfplan` refeito em 30/10, ~19:50 UTC, com o papel do Key Vault pedido pelo Pedro (opção A, abaixo): **6 a criar, 0 a alterar, 0 a destruir.** No JSON do plano, 64 `no-op` e 6 `create`; nenhum recurso com dado, de VM, disco ou rede muda. sha256: `fb70baede0eeee4e6829b4831c18359656f97458ddabb797ece5f928c55f6fda`. O primeiro plano (~17:00 UTC, 5 a criar, `463d7f08…7caf`) foi substituído e não vale mais.
 
 | Recurso | O quê | Custo/mês |
 |---|---|---:|
@@ -83,9 +83,12 @@ O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
 | `vm1-wsi-publico` | VM1: o mesmo papel no `wsi-publico`, para o script do operador enviar as lâminas públicas de reserva com SAS de delegação só de criação (seção 17). A SAS nunca dá mais que a atribuição: o `wsi-diagnose` fica fora do alcance | R$ 0 |
 | `vm1-delegacao` | VM1: `Storage Blob Delegator` na conta, porque a chave de delegação é pedida à conta (fatia 8 da Fase 3) | R$ 0 |
 | `vm1-fila-envio` | VM1: `Storage Queue Data Message Sender` na fila `jobs`, para o produtor de jobs de teste (decisão 7), que sai na Fase 5 | R$ 0 |
+| `vm1-kv-segredos` | VM1: `Key Vault Secrets Officer` no `pathsol-kv-v3`, para o script do operador gravar a senha do `pathsol_worker` (opção A do Pedro). A VM2 ganha `Key Vault Secrets User` só nesse segredo, num plano da próxima sessão, depois que ele existir: o cofre também vai guardar a chave do JWT (Fase 5) | R$ 0; operações do cofre em centavos |
 | **Total** | | **~R$ 0,26** |
 
-Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `containers/*` de plano de controle, e o `Storage Blob Delegator` só pede a chave de delegação. No apply, o `pathsol-role-assignment-v3` dispara 4 vezes e o `pathsol-storage-write-v3` pode disparar pelo container novo; são do apply, não incidente. O apply é do Pedro, pelo SSH, com o Antigravity fechado.
+Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `containers/*` de plano de controle, e o `Storage Blob Delegator` só pede a chave de delegação.
+
+**Senha do worker (fatia 5), decisão do Pedro de 30/10: opção A, Key Vault.** O script do operador gera a senha na VM1, faz o `ALTER ROLE pathsol_worker LOGIN PASSWORD` e grava o segredo no `pathsol-kv-v3` com a identidade da VM1 (token do IMDS só nesse script, com autorização). O worker lê pela identidade da VM2. A opção B (arquivo do root na VM2, sem Terraform) ficou de fora por contrariar o "segredos no Key Vault" da skill `pathsol-infra`. Consequência: o worker só conecta de verdade na sessão seguinte ao 2º apply. No apply, o `pathsol-role-assignment-v3` dispara 4 vezes e o `pathsol-storage-write-v3` pode disparar pelo container novo; são do apply, não incidente. O apply é do Pedro, pelo SSH, com o Antigravity fechado.
 
 ## Escolhas desta fase, fora do texto do plano
 
