@@ -16,6 +16,10 @@ resource "azurerm_monitor_action_group" "alertas" {
 
 # D3 ceiling. Cost Management shows list prices; the CSP partner invoice may differ.
 # It only warns, 1 to 3 days late, and never stops resources.
+# The direct e-mail of the 50% warning (27/10) never arrived, so every warning
+# also goes through the action group, whose e-mails do arrive. At today's spend
+# the 30% warning (R$ 1,500) fires every month and proves the path. Five
+# notifications is the API maximum.
 resource "azurerm_consumption_budget_subscription" "teto" {
   name            = "pathsol-orcamento-v3"
   subscription_id = data.azurerm_subscription.current.id
@@ -28,6 +32,7 @@ resource "azurerm_consumption_budget_subscription" "teto" {
 
   dynamic "notification" {
     for_each = {
+      actual_30    = { threshold = 30, type = "Actual" }
       actual_50    = { threshold = 50, type = "Actual" }
       actual_80    = { threshold = 80, type = "Actual" }
       actual_100   = { threshold = 100, type = "Actual" }
@@ -38,6 +43,7 @@ resource "azurerm_consumption_budget_subscription" "teto" {
       threshold_type = notification.value.type
       operator       = "GreaterThanOrEqualTo"
       contact_emails = [var.alert_email]
+      contact_groups = [azurerm_monitor_action_group.alertas.id]
     }
   }
 }
