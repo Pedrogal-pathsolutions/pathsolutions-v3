@@ -1,7 +1,10 @@
+import os
+import subprocess
 import unittest
 import uuid
 from contextlib import closing
 
+import psycopg
 from psycopg import errors
 
 from cluster import Cluster
@@ -188,6 +191,24 @@ class Schema(unittest.TestCase):
                     "insert into slides (tenant_id, id, wsi_name, wsi_sha256, material, stain) values (%s, %s, %s, %s, 'biopsia', 'HE')",
                     (A, slide, blob, SHA),
                 )
+
+    def test_dump_restores_like_the_monthly_restore_test(self):
+        # deploy/vm1/banco/pathsol_banco.py: globais.sql, then pg_restore --create --exit-on-error of each dump.
+        dump = os.path.join(self.cluster.dir, "pathsol.dump")
+        source = ["-h", self.cluster.dir, "-U", "postgres"]
+        subprocess.run(["pg_dump", *source, "--format=custom", "--compress=zstd", f"--file={dump}", "--dbname=pathsol"], check=True)
+        roles = subprocess.run(["pg_dumpall", *source, "--globals-only"], check=True, capture_output=True, text=True).stdout
+        other = Cluster()
+        self.addCleanup(other.stop)
+        # The restore test tolerates the repeated CREATE ROLE postgres, as here.
+        subprocess.run(["psql", "-X", "-q", "-h", other.dir, "-U", "postgres", "-d", "postgres"], input=roles, text=True, capture_output=True)
+        subprocess.run(["pg_restore", "-h", other.dir, "-U", "postgres", "--exit-on-error", "--create", "--dbname=postgres", dump], check=True)
+        with closing(psycopg.connect(host=other.dir, user="postgres", dbname="pathsol")) as conn:
+            rows = conn.execute(
+                "select relname, relforcerowsecurity, pg_get_userbyid(relowner) from pg_class "
+                "where relname in ('jobs', 'slides', 'tenants') order by relname"
+            ).fetchall()
+        self.assertEqual(rows, [("jobs", True, "pathsol_dono"), ("slides", True, "pathsol_dono"), ("tenants", True, "pathsol_dono")])
 
     def test_unknown_material_is_refused(self):
         slide = uuid.uuid4()

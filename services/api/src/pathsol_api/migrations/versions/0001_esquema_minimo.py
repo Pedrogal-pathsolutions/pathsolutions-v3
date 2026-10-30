@@ -90,6 +90,6 @@ def upgrade():
                               qc_scores_blob, updated_at) on jobs to pathsol_worker;
         -- Decision 7: the test producer, until Phase 5.
         grant select on tenants to pathsol_produtor;
-        grant insert on slides, jobs to pathsol_produtor;
+        grant insert on slides, jobs to pathsol_produtor
         """
     )
