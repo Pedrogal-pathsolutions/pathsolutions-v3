@@ -15,6 +15,7 @@ WORKDIR /src
 
 FROM base AS worker
 COPY pyproject.toml uv.lock ./
+COPY services/api/pyproject.toml services/api/
 COPY services/worker/pyproject.toml services/worker/
 RUN --mount=type=cache,target=/tmp/uv-cache \
     uv sync --frozen --no-dev --package pathsol-worker --no-install-workspace

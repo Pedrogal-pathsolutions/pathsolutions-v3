@@ -1,7 +1,10 @@
-# Build context of services/worker/Dockerfile: only what the image uses.
+# Build context of the service images (services/*/Dockerfile): only what they use.
 *
 !pyproject.toml
 !uv.lock
+!services/api/pyproject.toml
+!services/api/src
+!services/api/tests
 !services/worker/pyproject.toml
 !services/worker/src
 !services/worker/tests

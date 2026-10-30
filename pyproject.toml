@@ -1,6 +1,6 @@
 # uv workspace (plan, section 4.4): one lockfile for every Python package.
 [tool.uv.workspace]
-members = ["services/worker"]
+members = ["services/api", "services/worker"]
 
 [tool.uv]
 required-version = "==0.13.2"
