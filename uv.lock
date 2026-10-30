@@ -460,6 +460,7 @@ dependencies = [
     { name = "openslide-bin" },
     { name = "openslide-python" },
     { name = "pillow" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "torch" },
     { name = "transformers" },
 ]
@@ -477,6 +478,7 @@ requires-dist = [
     { name = "openslide-bin", specifier = "==4.0.1.2" },
     { name = "openslide-python", specifier = "==1.4.6" },
     { name = "pillow", specifier = "==12.3.0" },
+    { name = "psycopg", extras = ["binary"], specifier = "==3.3.6" },
     { name = "torch", specifier = "==2.14.1", index = "https://download.pytorch.org/whl/cu132" },
     { name = "transformers", specifier = "==4.57.6" },
 ]
