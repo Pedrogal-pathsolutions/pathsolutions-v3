@@ -76,3 +76,14 @@ Ficam para as próximas sessões: a camada Cold dos blobs `a` e `c` pelo ciclo d
 ## Fechamento da sessão 9 (~15:40 UTC)
 
 Resposta do Pedro: aplicar o `fim-do-dia.tfplan` (sha256 `10b5ea9da4febfae5c2ca99ce2c06018f1e4a75435dc9b2dd836c2d5f0775c60`); antes do commit, confirmar a VM2 desalocada; o IP da VM1 como última ação; e os comandos do apply com o sha256 completo. 15:39:02: VM2 `PowerState/deallocated`, `ProvisioningState/succeeded`.
+
+## IP estático da VM1 (autorizado como última ação da sessão 9; 15:40 UTC)
+
+Feito depois do commit `37e52c5`, do push e da conferência por hash (local igual ao remoto). Este registro fica sem commit até a sessão seguinte.
+- Antes: NIC `vm-appviewer-prod-00141`, `ipconfig1`, 10.0.0.5, `Dynamic`; sem ASG, pool ou NAT; VF `enP34919s1` (accelerated networking).
+- 15:40:08: `az network nic ip-config update -g rg-prod-brsouth-001 --nic-name vm-appviewer-prod-00141 -n ipconfig1 --private-ip-address 10.0.0.5`. rc=0 às 15:40:16: `Static`, 10.0.0.5, `Succeeded`.
+- Durante: laço de conexão TCP a `management.azure.com:443` a cada 1 s, de 15:40:03 a 15:42:03: 120 de 120 sem falha. `journalctl -k` desde 15:40:03: nenhuma linha (sem troca de VF).
+- Diferença do JSON do NIC: `etag`, `privateIPAllocationMethod` (`Dynamic` para `Static`) e a caixa do nome do grupo na referência da VM; NSG, IP público, accelerated networking e MAC iguais.
+- Depois (16:02): `eth0` 10.0.0.5/24, rota padrão pelo DHCP; o Postgres escuta em 127.0.0.1 e 10.0.0.5; `pathsol-banco`, `docker` e `nginx` ativos; verificação do banco com os 7 itens `OK`; `https://app.pathsolutions.com.br/` responde 503 (a resposta do nginx novo), em 0,08 s; a VM1 está ligada desde 09:01:41, sem reinício.
+- Activity log: `networkInterfaces/write` do NIC da VM1 `Started` 15:40:09,61, `Accepted` 15:40:09,80 e `Succeeded` 15:40:19,10.
+- Partida seguinte (sessão 10, 30/10): `eth0` com 10.0.0.5/24 pelo DHCP do Azure (168.63.129.16) às 09:04:59 UTC; o NIC continua `Static`, 10.0.0.5, com accelerated networking; o Postgres voltou a escutar em 127.0.0.1 e 10.0.0.5.
