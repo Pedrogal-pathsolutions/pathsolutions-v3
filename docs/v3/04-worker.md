@@ -9,7 +9,8 @@ Relatório parcial. A fase começou em 30/10/2026 (~16:15 UTC), na sessão 1, de
 | Skill `pathsol-contrato-h5` com a decisão 5 | feita (`643baf8`): diff mostrado ao Pedro antes do código e aprovado, com os 7 pontos de fora do texto da decisão 5 |
 | 1. Benchmark na VM2 | feita (30/10, 17:42–18:57 UTC): 4 lâminas TCGA-STAD, fp16 e fp32, CPU, tempo por lâmina e partida (a frio, na fatia 9). O benchmark achou um defeito na escolha do nível da miniatura, corrigido em `42fdfe3`. Resultado abaixo e em `docs/v3/04-benchmark-vm2.json` |
 | 2. Pesos do Hibou-L | feita na VM1: o Pedro baixou a revisão fixada pelo terminal dele (17:21 UTC), com o script de `ed28b16`; hashes e licença conferidos; código lido antes de rodar; atenção fixada em eager. Faltam a cópia no container `modelos` (depois do apply) e a cópia na VM2 (com o benchmark) |
-| 3 a 11 | não começadas |
+| 3. Esquema mínimo com RLS forçada | feita (`9a19fee`, aplicada às 19:34 UTC com autorização): base `pathsol` vazia, com `tenants`, `slides` e `jobs`, estados e motivos da decisão 5; 16 testes num PostgreSQL 18.6 temporário |
+| 4 a 11 | não começadas |
 
 ## Decisões do Pedro (30/10)
 
@@ -61,6 +62,15 @@ O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
 - **Download do GDC:** ~3,2 a 3,4 MB/s por conexão (1,6 GB em 476 s). Para o padrão 20 (dados públicos processados direto da fonte, Fase 7), isso põe na VM2 ~3 a 4 min de download para cada lâmina de ~700 MB, sem paralelismo; conexões em paralelo não foram testadas.
 
 **Defeito achado pelo benchmark (`42fdfe3`).** A 1ª execução (imagem `a4b2d28`) parou na peça: "a pirâmide não tem nível baixo para a miniatura". Com mpp 0,2525, os 4 µm/px do QC 1 pedem 15,84×, um pouco abaixo do nível de 16× (4,04 µm/px, 33 MP). O `get_best_level_for_downsample` do OpenSlide devolvia o nível de 4× (535 MP), acima do teto, e o leitor recusava um SVS normal de 40× da Aperio como "formato não suportado". Na `acad5023`, o mesmo defeito passou calado: leu 180 MP e gastou 13,3 s na miniatura. A correção usa o nível mais grosso que não passa do alvo por mais de 5% ou, se nenhum couber no teto, o mais fino até 2 vezes o alvo (8 µm/px, o limite do QC 1 no plano), e tem teste de regressão com o caso real. O Pedro respondeu "Corrija e siga".
+
+## Esquema mínimo com RLS forçada (fatia 3)
+
+- **Onde:** migrações do Alembic em `services/api/` (seção 4.4 do plano; o FastAPI entra na Fase 5). O Alembic só gera o SQL, em modo offline. O superusuário aplica pelo `psql`, dentro do container do banco, com `SET ROLE pathsol_dono`, e por isso toda tabela pertence ao papel dono. Nada mudou no `pg_hba` nem na rede, e não há credencial nova. Script do operador: `deploy/vm1/banco/pathsol_esquema.py pathsol-api:<commit>`, que aplica papéis e base (idempotente) e depois as migrações a partir da revisão do banco.
+- **Papéis** (todos NOLOGIN, sem superusuário, sem BYPASSRLS): `pathsol_dono`, dono das tabelas; `pathsol_worker`, que lê o job e a lâmina e só atualiza as 9 colunas de estado do job, sem `INSERT` nem `DELETE` (ganha LOGIN e senha na fatia 5); `pathsol_produtor`, que só lê o próprio tenant e insere lâmina e job, por `SET ROLE` do operador (decisão 7; sai na Fase 5). Fora o dono, só o worker tem `CONNECT` na base.
+- **Tabelas:** `tenants` (o container de WSI é `wsi-<slug>`), `slides` e `jobs`, com RLS ativa e forçada e a política `tenant = app.tenant_id`. Restrições: a chave do job para a lâmina inclui o tenant; o motivo bate com o estado (QC_FAILED com vidro vazio, material insuficiente ou foco; formato não suportado com formato ou escala indisponível); COMPLETED se e só se houver ponteiro do `.h5`, com tamanho, sha256 e `extractor_version`; o ponteiro do `.h5` e o dos escores de foco começam pelo próprio tenant e pela lâmina, com o `job_id` no nome; o nome do blob da WSI é o UUID da própria lâmina, nunca o nome do arquivo do scanner, que pode trazer o número do caso.
+- **Política com `nullif`:** a skill escreve `current_setting('app.tenant_id', true)::uuid`. Depois de uma transação com `SET LOCAL`, o Postgres deixa a variável como texto vazio na sessão, e o cast daria erro em vez de zero linhas. Com `nullif(…, '')`, a sessão sem tenant lê nada, como a skill pede ("sem tenant definido, a query não retorna nada"); o teste cobre o caso.
+- **Testes** (16, num PostgreSQL 18.6-1.pgdg13+2 temporário dentro da imagem de teste, a mesma versão da produção, sem rede): os testes 2 e 3 de isolamento da skill no nível do banco (gravar em outro tenant é recusado; sem tenant, zero linhas), RLS forçada, papéis sem posse, as restrições acima e o caminho da restauração mensal (dump, `globais.sql` e `pg_restore --create --exit-on-error`, com RLS e dono preservados). Cinco defeitos aplicados de propósito na migração foram pegos, cada um pelo teste esperado. Um deles revelou que os testes travavam em vez de falhar; ganharam `lock_timeout` e conexão própria por subteste.
+- **Backup:** a base nova entra sozinha no `pg_dump` diário (o `pathsol_banco.py` lista toda base que aceita conexão), e os papéis vão no `globais.sql`.
 
 ## Plano do Terraform: container dos pesos e papéis da VM1
 
