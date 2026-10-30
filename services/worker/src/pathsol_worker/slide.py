@@ -17,6 +17,9 @@ MPP_MAX = 0.55
 MPP_XY_TOLERANCE = 0.01
 # The level read for the thumbnail must be small: level 0 is never read whole.
 MAX_THUMBNAIL_SOURCE_PIXELS = 200_000_000
+# 40x scans state mpp a bit above 0.25, so their 16x level sits just above
+# 4 um/px; it still counts as the target's level.
+THUMBNAIL_LEVEL_TOLERANCE = 1.05
 
 UNSUPPORTED = "formato não suportado"
 NO_SCALE = "escala indisponível"
@@ -96,12 +99,23 @@ class Slide:
         return on_white(region).resize((PATCH, PATCH), Image.BICUBIC)
 
     def thumbnail(self, target_mpp):
-        """The whole slide at about target_mpp: (RGB array, level-0 pixels per thumbnail pixel)."""
+        """The whole slide at target_mpp: (RGB array, level-0 pixels per thumbnail pixel).
+
+        Read from the coarsest level not coarser than the target, or else from
+        the finest one up to twice the target, among the levels under the cap.
+        """
+        level_mpp = [self.mpp * d for d in self.level_downsamples]
+        usable = [
+            level
+            for level, (width, height) in enumerate(self.level_dimensions)
+            if width * height <= MAX_THUMBNAIL_SOURCE_PIXELS and level_mpp[level] <= 2 * target_mpp
+        ]
+        if not usable:
+            raise UnsupportedFormat(UNSUPPORTED, "a pirâmide não tem nível para a miniatura")
+        finer = [level for level in usable if level_mpp[level] <= THUMBNAIL_LEVEL_TOLERANCE * target_mpp]
+        level = max(finer, key=level_mpp.__getitem__) if finer else min(usable, key=level_mpp.__getitem__)
         downsample = target_mpp / self.mpp
-        level = self._handle.get_best_level_for_downsample(downsample)
         width, height = self.level_dimensions[level]
-        if width * height > MAX_THUMBNAIL_SOURCE_PIXELS:
-            raise UnsupportedFormat(UNSUPPORTED, "a pirâmide não tem nível baixo para a miniatura")
         region = self._handle.read_region((0, 0), level, (width, height))
         size = (max(1, round(self.dimensions[0] / downsample)), max(1, round(self.dimensions[1] / downsample)))
         return np.asarray(on_white(region).resize(size, Image.BICUBIC)), self.dimensions[0] / size[0]

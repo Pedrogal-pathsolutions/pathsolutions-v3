@@ -115,5 +115,38 @@ class Reading(unittest.TestCase):
                 s.thumbnail(4.0)
 
 
+class ThumbnailLevel(unittest.TestCase):
+    """Real 40x scans state mpp a bit above 0.25, so 4 um/px asks for a little
+    under 16x; the 16x level must still be used, not the 4x one (benchmark of 30/10)."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+
+    def level_read(self, mpp, downsamples, cap):
+        path = os.path.join(self.dir.name, f"l{mpp}{len(downsamples)}.svs")
+        sinteticas.write_svs(path, sinteticas.tissue_image(4096, 2048), mpp=mpp, downsamples=downsamples)
+        with slides.open_slide(path) as s, mock.patch.object(slides, "MAX_THUMBNAIL_SOURCE_PIXELS", cap):
+            with mock.patch.object(s._handle, "read_region", wraps=s._handle.read_region) as read:
+                thumb, downsample = s.thumbnail(4.0)
+        return read.call_args.args[1], thumb.shape, downsample
+
+    def test_level_slightly_coarser_than_the_target_is_used(self):
+        level, shape, downsample = self.level_read(0.2525, (1, 4, 16), cap=10**9)
+        self.assertEqual(level, 2)
+        self.assertEqual(shape, (129, 259, 3))
+        self.assertAlmostEqual(downsample, 4096 / 259)
+
+    def test_coarser_level_when_the_finer_ones_exceed_the_cap(self):
+        # 20x scan: 0.5, 2 and 8 um/px; only the 8 um/px level fits.
+        level, shape, _ = self.level_read(0.5, (1, 4, 16), cap=50_000)
+        self.assertEqual(level, 2)
+        self.assertEqual(shape, (256, 512, 3))
+
+    def test_refuses_a_pyramid_without_a_level_up_to_twice_the_target(self):
+        with self.assertRaises(slides.UnsupportedFormat):
+            self.level_read(0.25, (1, 64), cap=1_000_000)
+
+
 if __name__ == "__main__":
     unittest.main()
