@@ -44,9 +44,10 @@ class Job:
 
 
 class JobStore:
-    def __init__(self, conninfo):
+    def __init__(self, conninfo, **params):
         # Autocommit: each transaction() block is the whole transaction, with nothing implicit around it.
-        self.conn = psycopg.connect(conninfo, autocommit=True)
+        # The password comes in params, never in the conninfo, which may be logged.
+        self.conn = psycopg.connect(conninfo, autocommit=True, **params)
 
     def close(self):
         self.conn.close()
