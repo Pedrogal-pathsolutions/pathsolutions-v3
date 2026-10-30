@@ -1,4 +1,5 @@
 """Synthetic Aperio-style SVS files for the tests; no real slide is used."""
+import cv2
 import numpy as np
 import tifffile
 
@@ -31,3 +32,22 @@ def tissue_image(width=2048, height=1024):
     image[: height // 2 + 256, : width // 2] = (200, 120, 170)
     image[-128:, -128:] = (40, 60, 200)
     return image
+
+
+def textured(size, rng):
+    """Pink tissue with fine texture: a high Laplacian, as in focus."""
+    noise = rng.integers(-40, 41, (size, size, 1))
+    return np.clip(np.array((200, 120, 170)) + noise, 0, 255).astype(np.uint8)
+
+
+def tissue_slide(path, rng, cells=13, side=224, blurred_fraction=0.0):
+    """cells x cells patches of tissue at 0.5 um/px, inside one patch of glass, as on a real slide."""
+    size = side * cells
+    tissue = textured(size, rng)
+    cut = int(size * blurred_fraction)
+    if cut:
+        tissue[:, :cut] = cv2.GaussianBlur(tissue[:, :cut], (0, 0), 6)
+    image = np.full((size + 2 * side, size + 2 * side, 3), 240, dtype=np.uint8)
+    image[side:-side, side:-side] = tissue
+    write_svs(path, image, mpp=0.5)
+    return path

@@ -13,17 +13,14 @@ import copy
 import datetime
 import json
 import os
-import subprocess
 import time
 
 import cv2
 import numpy as np
 import openslide
-import PIL
 import torch
-import transformers
 
-from pathsol_worker import grid, patches, qc
+from pathsol_worker import grid, patches, qc, versao
 from pathsol_worker.extractor import Extractor
 from pathsol_worker.slide import open_slide
 
@@ -42,24 +39,12 @@ def row_cosine(a, b):
 
 
 def versions():
-    try:
-        driver = subprocess.run(
-            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
-            capture_output=True, text=True, timeout=30,
-        ).stdout.strip()
-    except OSError:
-        driver = None
     return {
-        "torch": torch.__version__,
-        "cuda": torch.version.cuda,
+        **versao.software(),
         "cudnn": torch.backends.cudnn.version(),
-        "transformers": transformers.__version__,
-        "pillow": PIL.__version__,
         "numpy": np.__version__,
         "opencv": cv2.__version__,
         "openslide": openslide.__library_version__,
-        "gpu": torch.cuda.get_device_name(0),
-        "driver": driver,
         "cpus": os.cpu_count(),
     }
 

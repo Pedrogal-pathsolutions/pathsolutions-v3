@@ -7,21 +7,16 @@ that waits a week for VM2.
 """
 import dataclasses
 import email.utils
-import json
-import time
 import urllib.parse
 from urllib.request import Request, urlopen
 from xml.etree import ElementTree
 from xml.sax.saxutils import escape
 
+from pathsol_worker import identidade
+
 JOBS = "https://pathsolwsiv3.queue.core.windows.net/jobs"
 DEAD_LETTER = "https://pathsoldlqv3.queue.core.windows.net/jobs-dead-letter"
-IMDS_TOKEN_URL = (
-    "http://169.254.169.254/metadata/identity/oauth2/token"
-    "?api-version=2018-02-01&resource=https://storage.azure.com/"
-)
 X_MS_VERSION = "2024-11-04"
-TOKEN_MARGIN = 300
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,14 +35,7 @@ class Queue:
     def __init__(self, url, opener=urlopen):
         self.url = url
         self.opener = opener
-        self._token, self._expires = None, 0
-
-    def token(self):
-        if time.time() > self._expires - TOKEN_MARGIN:
-            with self.opener(Request(IMDS_TOKEN_URL, headers={"Metadata": "true"}), timeout=10) as response:
-                answer = json.load(response)
-            self._token, self._expires = answer["access_token"], int(answer["expires_on"])
-        return self._token
+        self.token = identidade.Token(identidade.STORAGE, opener)
 
     def _call(self, method, path, query, data=None):
         request = Request(

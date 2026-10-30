@@ -3,7 +3,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-import cv2
 import numpy as np
 
 import sinteticas
@@ -12,14 +11,6 @@ from pathsol_worker import slide as slides
 
 SIDE = 224  # at 0.5 um/px a patch is 224 level-0 pixels
 CELLS = 13  # 169 patches, above the focus minimum
-
-
-def textured(size, rng):
-    """Pink tissue with fine texture: a high Laplacian, as in focus."""
-    image = np.empty((size, size, 3), dtype=np.uint8)
-    noise = rng.integers(-40, 41, (size, size, 1))
-    image[:] = np.clip(np.array((200, 120, 170)) + noise, 0, 255)
-    return image
 
 
 class FirstPass(unittest.TestCase):
@@ -37,15 +28,7 @@ class FirstPass(unittest.TestCase):
         return tempfile.mkdtemp(dir=self.dir.name)
 
     def tissue_slide(self, blurred_fraction=0.0):
-        """CELLS x CELLS cells of tissue inside one cell of glass, as on a real slide."""
-        size = SIDE * CELLS
-        tissue = textured(size, self.rng)
-        cut = int(size * blurred_fraction)
-        if cut:
-            tissue[:, :cut] = cv2.GaussianBlur(tissue[:, :cut], (0, 0), 6)
-        image = np.full((size + 2 * SIDE, size + 2 * SIDE, 3), 240, dtype=np.uint8)
-        image[SIDE:-SIDE, SIDE:-SIDE] = tissue
-        return self.svs(image)
+        return sinteticas.tissue_slide(os.path.join(self.dir.name, "l.svs"), self.rng, CELLS, SIDE, blurred_fraction)
 
     def test_blank_glass_fails_qc1_before_any_tile(self):
         glass = np.clip(240 + self.rng.integers(-3, 4, (2048, 2048, 3)), 0, 255).astype(np.uint8)
@@ -56,7 +39,7 @@ class FirstPass(unittest.TestCase):
 
     def test_tiny_tissue_is_insufficient_except_in_cytology(self):
         image = np.full((2048, 2048, 3), 240, dtype=np.uint8)
-        image[800:1200, 800:1200] = textured(400, self.rng)  # 200 x 200 um: 0.04 mm2
+        image[800:1200, 800:1200] = sinteticas.textured(400, self.rng)  # 200 x 200 um: 0.04 mm2
         path = self.svs(image)
         self.assertEqual(passagem.first_pass(path, "biopsia", self.work(), workers=1).reason, "insufficient_material")
         self.assertIsInstance(passagem.first_pass(path, "citologia", self.work(), workers=1), passagem.Tiles)
