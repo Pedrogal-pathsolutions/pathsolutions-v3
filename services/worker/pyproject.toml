@@ -1,0 +1,22 @@
+[project]
+name = "pathsol-worker"
+version = "0.1.0"
+description = "Worker GPU da PathSolutions v3: fila, QC, tiling, Hibou-L e .h5."
+requires-python = "==3.13.*"
+dependencies = [
+    "h5py==3.16.0",
+    "numpy==2.5.4",
+    "opencv-python-headless==4.14.0.94",
+    "openslide-bin==4.0.1.2",
+    "openslide-python==1.4.6",
+    "pillow==12.3.0",
+    "torch==2.14.1",
+    "transformers==4.57.6",
+]
+
+[dependency-groups]
+dev = ["tifffile==2026.9.20"]
+
+[build-system]
+requires = ["uv_build>=0.13.2,<0.14"]
+build-backend = "uv_build"

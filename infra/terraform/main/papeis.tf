@@ -140,6 +140,32 @@ locals {
         role_id   = azurerm_role_definition.backup_banco.role_definition_resource_id
         principal = local.vm1_principal_id
       }
+      # Plan 10.1: VM1 uploads the Hibou-L revision and reads it back for VM2.
+      vm1-modelos = {
+        scope     = azurerm_storage_container.modelos.id
+        role_id   = azurerm_role_definition.blob_sem_exclusao.role_definition_resource_id
+        principal = local.vm1_principal_id
+      }
+      # Plan 17: the operator script uploads the public reserve slides with a
+      # create-only user delegation SAS that VM1 signs. The SAS never grants
+      # more than this assignment, so wsi-diagnose stays out of reach.
+      vm1-wsi-publico = {
+        scope     = azurerm_storage_container.wsi["publico"].id
+        role_id   = azurerm_role_definition.blob_sem_exclusao.role_definition_resource_id
+        principal = local.vm1_principal_id
+      }
+      # The user delegation key is asked of the account, not of a container.
+      vm1-delegacao = {
+        scope     = azurerm_storage_account.wsi.id
+        role_id   = data.azurerm_role_definition.builtin["Storage Blob Delegator"].id
+        principal = local.vm1_principal_id
+      }
+      # Decision 7: the test job producer on VM1, without JWT, until Phase 5.
+      vm1-fila-envio = {
+        scope     = azurerm_storage_queue.jobs.id
+        role_id   = data.azurerm_role_definition.builtin["Storage Queue Data Message Sender"].id
+        principal = local.vm1_principal_id
+      }
       vm2-autodesalocar = {
         scope     = data.azurerm_virtual_machine.vm2.id
         role_id   = azurerm_role_definition.vm2_autodesalocar.role_definition_resource_id

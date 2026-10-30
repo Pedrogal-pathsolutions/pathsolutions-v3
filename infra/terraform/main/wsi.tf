@@ -60,6 +60,18 @@ resource "azurerm_storage_container" "h5" {
   }
 }
 
+# Plan 10.1: the pinned Hibou-L revision, kept even if the gated access is
+# revoked, and later the approved model heads. No legal hold, and no identity
+# here may delete; no lifecycle rule reaches it, so it stays Hot.
+resource "azurerm_storage_container" "modelos" {
+  name               = "modelos"
+  storage_account_id = azurerm_storage_account.wsi.id
+
+  lifecycle {
+    prevent_destroy = true
+  }
+}
+
 # Decision 1. Counted from creation, because a write would reset the
 # modification time. A new tenant container joins the WSI rule in the plan
 # that creates it.

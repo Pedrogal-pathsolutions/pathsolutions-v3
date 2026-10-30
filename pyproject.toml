@@ -1,0 +1,17 @@
+# uv workspace (plan, section 4.4): one lockfile for every Python package.
+[tool.uv.workspace]
+members = ["services/worker"]
+
+[tool.uv]
+required-version = "==0.13.2"
+# Only the platform the containers run on, where the CUDA build of torch exists.
+environments = ["sys_platform == 'linux' and platform_machine == 'x86_64'"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu132" }
+
+# CUDA 13.2 build of torch (plan, section 4): covers the T4 and the R595 driver.
+[[tool.uv.index]]
+name = "pytorch-cu132"
+url = "https://download.pytorch.org/whl/cu132"
+explicit = true

@@ -1,0 +1,8 @@
+# Build context of services/worker/Dockerfile: only what the image uses.
+*
+!pyproject.toml
+!uv.lock
+!services/worker/pyproject.toml
+!services/worker/src
+!services/worker/tests
+**/__pycache__
