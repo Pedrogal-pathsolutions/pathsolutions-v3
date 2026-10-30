@@ -107,6 +107,12 @@ class Schema(unittest.TestCase):
                 (B, slide, blob, SHA),
             )
 
+    def test_producer_reads_only_the_slides_of_its_tenant(self):
+        conn = self.as_role("pathsol_produtor", A)
+        self.assertEqual([r[0] for r in conn.execute("select id from slides")], [self.slides[A]])
+        with self.assertRaises(errors.InsufficientPrivilege):
+            conn.execute("select id from jobs")
+
     def test_producer_writes_into_its_tenant(self):
         conn = self.as_role("pathsol_produtor", A)
         slide, blob = slide_row()
