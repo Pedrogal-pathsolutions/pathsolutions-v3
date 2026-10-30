@@ -88,7 +88,7 @@ def gpu_throughput(ex, batch, seconds=GPU_SECONDS):
 def bench_slide(path, fp16, fp32, batch, workers=3, cpu_workers=(1, 2, 3), sample=600):
     start = time.perf_counter()
     with open_slide(path) as s:
-        mask, downsample, threshold = qc.thumbnail_mask(s)
+        mask, downsample, threshold, _ = qc.thumbnail_mask(s)
         side, cells = grid.candidates(s.dimensions, s.mpp, mask, downsample)
         result = {
             "arquivo": os.path.basename(path),

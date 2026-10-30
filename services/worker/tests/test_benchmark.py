@@ -35,7 +35,8 @@ class Slide(unittest.TestCase):
         self.path = os.path.join(self.dir.name, "l.svs")
         image = np.full((2048, 4096, 3), 240, dtype=np.uint8)
         image[:896, :1344] = (200, 120, 170)  # six whole cells of tissue
-        image[:448, 2240:2270] = (200, 120, 170)  # a strip: ~7% of its cell, below the floor
+        # A 60 x 60 um fragment on the corner of four cells: it survives QC 1, and each cell gets ~7% tissue.
+        image[328:568, 2568:2808] = (200, 120, 170)
         sinteticas.write_svs(self.path, image)
 
     def test_every_candidate_is_extracted_or_below_the_floor(self):

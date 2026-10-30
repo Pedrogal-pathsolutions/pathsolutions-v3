@@ -18,7 +18,7 @@ class Candidates(unittest.TestCase):
 
     def test_thumbnail_mask_finds_the_tissue_block(self):
         with slides.open_slide(self.path) as s:
-            mask, downsample, threshold = qc.thumbnail_mask(s)
+            mask, downsample, threshold, area = qc.thumbnail_mask(s)
         self.assertEqual(downsample, 16.0)
         self.assertGreaterEqual(threshold, qc.MIN_SATURATION)
         self.assertTrue(mask[:40, :60].all())
