@@ -1,12 +1,40 @@
-# Fase 3 — Base de infraestrutura (relatório parcial)
+# Fase 3 — Base de infraestrutura
 
-Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este relatório é atualizado a cada sessão e cresce por fatia, na ordem da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão seguinte começa por aqui e pelo `git log`.
+Concluída em 30/10/2026, na sessão 10, e parada no gate. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2, e seguiu as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). O resumo do fechamento vem primeiro; depois vêm o histórico das sessões, os planos aplicados, as evidências, o que não foi verificado, os riscos e as decisões. O detalhe de cada ação nas VMs e no Azure, com horário, comando e saída, está em `docs/operacao/`; o código, em `infra/terraform/` e `deploy/vm1/`.
+
+## Resumo do fechamento
+
+### Gate (seção 19.2 do plano)
+
+| Critério | Resultado | Evidência |
+|---|---|---|
+| Restauração do banco testada | Dois testes em 29/10, cada um com o backup físico mais o WAL até uma linha gravada na hora e com o dump; o rascunho é apagado no fim. A restauração roda sozinha todo dia 1, e a verificação a cada 15 min acusa se a última tiver mais de 35 dias | `docs/operacao/2026-10-29-fatia7-banco.md`; evidências (`pathsol-banco-restaura`) |
+| Alertas disparados de verdade | 18 das 20 regras dispararam com evento real ou provocado, todas chamando o action group, que entrega e-mail desde a confirmação do código (29/10, 13:53 UTC). As regras com estado também resolveram (disco, banco, dead-letter, silêncio da VM1). Não dispararam o `pathsol-vm2-ligada-v3` (4 h de VM2, ~R$ 19) e o `pathsol-lock-delete-v3` (as únicas travas do grupo protegem a conta de WSI e a do estado) | "Resultados da fatia 8"; `docs/operacao/2026-10-29-fatia8-testes.md` |
+| Proteção das WSIs testada | Sob retenção legal, nenhuma identidade sobrescreve nem apaga blob: VM1 e VM2 recebem 403 antes da retenção, e o Pedro, como dono dos dados, 409. O container e a conta reais ficam barrados pela retenção e pela trava. A conta com retenção não se apaga (`AccountProtectedFromDeletion`). O ciclo de vida muda a camada sem regravar o blob. Uma retenção tirada dispara alerta, mas o Terraform não a vê | idem |
+
+### Estado no fechamento
+
+- **Terraform:** `bootstrap/` com 5 recursos e `main/` com 64 depois do `limpeza.tfplan` (até ele, o estado gravado ainda lista os 8 objetos da conta descartável). Os recursos novos ficam em `rg-pathsol-v3`; o orçamento, os papéis, as atribuições e as associações de coleta valem nos escopos do plano (subscrição, grupos e VMs). VM1, VM2, discos de SO e rede entram só como `data`. Estado remoto na `pathsoltfstatev3`, com versionamento e trava.
+- **Storage:** `pathsolwsiv3` (ZRS; `wsi-diagnose` e `wsi-publico` com retenção legal; `slide-h5`; `backup-banco`; fila `jobs`; soft delete de blobs de 14 dias, sem exclusão permanente; ciclo de vida com `wsi-cold-30d`, `h5-cool-90d` e `backup-dump-35d`; trava `nao-apagar`), `pathsoldlqv3` (dead-letter), `pathsolstatusv3` (status) e `pathsoltfstatev3` (estado). A conta descartável dos testes foi apagada em 30/10.
+- **Monitoramento:** action group com o receptor verificado; 20 regras de alerta (11 de activity log, 2 de métrica, 6 de busca em log e o orçamento); Log Analytics com o `Perf` e o `local0` das duas VMs.
+- **VM1** (D8s_v5): `/data` no P10 e `/srv/banco` no P6 do banco; PostgreSQL 18.6 com TLS e `pg_hba` só com a VM2; pgBackRest e `pg_dump` no Blob; verificação a cada 15 min; nginx e certificado novos; agente; unit do status; IP privado estático 10.0.0.5; auto-shutdown às 23:00 e partida às 06:00 pelo runbook `pathsol-ligar-vm1-v3`.
+- **VM2** (NC4as_T4_v3): `/data` no P6, identidade `pathsol-id-vm2-v3`, agente, kernel e driver 595.71.05 em hold, IP privado estático 10.0.0.4 e auto-shutdown às 23:30. Desalocada.
+
+### Custo
+
+Pelas tabelas dos planos aprovados, os recursos novos da fase somam ~R$ 388/mês com o volume de hoje: R$ 269,75 dos discos de dados, R$ 92,03 do disco do banco e ~R$ 27 de alertas, coleta de logs, Key Vault, filas e contas pequenas. O que é cobrado por GiB (WSI, `.h5`, backups e o soft delete deles) cresce com o uso. A exclusão do P20 e do P15 tirou R$ 1.002,80/mês, então a conta líquida da fase fica em −R$ 614/mês. O orçamento mostra R$ 2.863,13 gastos em outubro até 30/10 e previsão de R$ 3.117,28 para o mês (preço de tabela; a fatura do parceiro CSP pode ser diferente), contra o teto de R$ 5.000.
+
+### Pendências que não bloqueiam o gate
+
+1. **Fatia 0, exportação de teste do Motic:** não chegou. Proposta: passar para a Fase 4, onde entram o leitor e a desidentificação (decisão 2 abaixo).
+2. **Conferências que dependem do relógio**, para a primeira sessão depois do gate: a resolução do `pathsol-dlq-nao-vazia-v3` (a mensagem de teste expira em 31/10, 02:02 UTC); nenhum disparo do `pathsol-vm1-saude-v3` no auto-shutdown de 30/10 (correção aplicada às 12:02 UTC); o pgBackRest no primeiro backup com soft delete (a regravação do `backup.info` gera a primeira cópia em soft delete).
+3. **Estado do Terraform:** o `limpeza.tfplan` tira do estado o último objeto da conta descartável. O apply é do Pedro (decisão 5 abaixo).
 
 ## Situação por fatia
 
 | Fatia | Situação |
 |---|---|
-| 0. Exportação de teste do Motic | não chegou; nada a fazer até ela chegar |
+| 0. Exportação de teste do Motic | não chegou. Proposta: passa para a Fase 4 (decisão 2) |
 | 1. Decisão 4 antes do primeiro apply | feita: codex desinstalado, applies do Pedro pelo SSH com o Antigravity fechado e `az logout` no fim do dia |
 | 2. Terraform e estado remoto | feita: bootstrap aplicado e estado migrado para `pathsoltfstatev3` |
 | 3. Orçamento e action group | feita. O aviso de 50% disparou em 27/10, 02:10 UTC (Cost Management); se o e-mail chegou não foi verificado. O receptor do action group só foi confirmado por código em 29/10 (sessão 9); desde então os e-mails dos alertas chegam |
@@ -14,7 +42,7 @@ Em andamento. Começou em 27/10/2026 (UTC), depois do APROVADO FASE 2. Este rela
 | 5. Primeira partida da VM2 e discos | feita (27 e 28/10). VM1 com o `/data` no P10, conferido depois do ciclo de desalocar e ligar de 27 para 28/10; VM2 com kernel e driver congelados e o `/data` no P6. O Pedro apagou o P15 (27/10, 22:41 UTC, pelo Portal) e o P20 (28/10, 21:07 UTC). Registro em `docs/operacao/2026-10-27-discos-fatia5.md` |
 | 6. VMs | feita (28 e 29/10). VM1: limpeza da seção 4.5, tetos de logs, nginx e certificado novos, agente, unit do status. VM2: identidade, agente, tetos de logs e chave de host conferida. Apply do `fatias6-7.tfplan` conferido. Runbook novo (padrão 27) no PowerShell 7.6, e a automação sem o Virtual Machine Contributor. Auto-shutdown da decisão 3 desde 29/10: VM1 às 23:00 e VM2 às 23:30. No ciclo real de 28 para 29/10, o status gravou `down` e `up`, e o runbook novo ligou a VM1 desalocada; o `TurnOn-VMs` antigo foi apagado (29/10). Registro em `docs/operacao/2026-10-28-fatia6-vms.md` |
 | 7. Postgres, backup e restauração | feita (29/10). PostgreSQL 18.6 em container na VM1, TLS obrigatório, `pg_hba` só com a VM2 na rede; pgBackRest com a identidade da VM1 (full semanal, diferencial diário, WAL a cada 5 min no máximo); `pg_dump` diário; verificação a cada 15 min no syslog; restauração testada duas vezes e agendada todo mês; os 2 alertas de log do banco aplicados e disparados de verdade (sessão 9). Registro em `docs/operacao/2026-10-29-fatia7-banco.md` |
-| 8. Testes | quase feita (29/10, sessão 9). Provados: SAS só de criação com blocos, sobrescrita e exclusão sob retenção legal com cada identidade (os passos que apagam pelo Pedro), trava, poller com o papel restrito, start em Deallocating, `% Used Space` contra `df`, PutMessage e alertas disparados de verdade (dead-letter, disco 80% e 90%, banco, activity log, silêncio da VM1, orçamento), além de restauração, `oom_score_adj` e IMDS no container (fatia 7). Faltam: Cold pelo ciclo de vida (30/10), parada limpa do Postgres no auto-shutdown das 23:00 de 29/10, resolução do alerta da dead-letter e limpeza da conta descartável. Registro em `docs/operacao/2026-10-29-fatia8-testes.md` |
+| 8. Testes | feita (29 e 30/10, sessões 9 e 10). Provados: SAS só de criação com blocos, sobrescrita e exclusão sob retenção legal com cada identidade (os passos que apagam pelo Pedro), trava, poller com o papel restrito, start em Deallocating, `% Used Space` contra `df`, PutMessage e alertas disparados de verdade (dead-letter, disco 80% e 90%, banco, activity log, silêncio da VM1, orçamento), além de restauração, `oom_score_adj` e IMDS no container (fatia 7). Em 30/10: Cold pelo ciclo de vida sob retenção legal, parada limpa do Postgres no auto-shutdown, resolução dos alertas de disco e de banco, conta com retenção que não se apaga, retenção tirada que o Terraform não vê e limpeza da conta descartável. Registro em `docs/operacao/2026-10-29-fatia8-testes.md` |
 
 ## O que foi feito
 
@@ -111,7 +139,20 @@ Registro detalhado em `docs/operacao/2026-10-29-fatia8-testes.md`.
 7. O Pedro deixou o IP estático da VM1 para a última ação da sessão, depois do commit e do push e antes do apply dele.
 8. Achado nos testes: o `pathsol-vm1-saude-v3` dispara em toda desalocação da VM1. Correção no código e plano alternativo (`fim-do-dia.tfplan`).
 
-## Resultados da fatia 8 (29/10)
+### Sessão 10 (30/10, a partir das 12:04 UTC)
+
+Registro detalhado em `docs/operacao/2026-10-29-fatia8-testes.md`, seção "Sessão 10".
+1. O Pedro aplicou o `fim-do-dia.tfplan` às 12:02 UTC e seguiu no `az`. Conferência: sha256 igual; `terraform plan` sem mudanças; soft delete de blobs na `pathsolwsiv3` com 14 dias e `allowPermanentDelete false`; o alerta novo `pathsol-blob-service-write-v3`, que disparou às 12:09 com o próprio apply; o `pathsol-vm1-saude-v3` só com `PlatformInitiated`; nenhuma falha no activity log.
+2. IP estático da VM1 conferido na partida de 30/10 (10.0.0.5 pelo DHCP), e o registro da sessão 9 commitado (`f3ccd06`).
+3. Cold pelo ciclo de vida sob retenção legal: os blobs `a` e `c` passaram a Cold às 05:30:01 UTC, sem mudar o `lastModified`.
+4. Parada limpa do Postgres no auto-shutdown de 29/10: `database system is shut down` às 02:02:03,667 UTC, antes do docker e do `/srv/banco`; na partida, `database system was shut down at 2026-10-30 02:02:03 UTC`, sem recuperação.
+5. Alertas: disco 80% e 90% e falha do banco resolvidos em 29/10; o `pathsol-dlq-nao-vazia-v3` segue disparado até a mensagem de teste expirar; o `pathsol-vm1-saude-v3` disparou no auto-shutdown, antes do apply da correção.
+6. Leitura de documentação em workflow (4 tópicos, só fontes oficiais, sem comando no Azure): exclusão de conta com retenção legal, `clearLegalHold`, atribuições de papel de recurso apagado e o comportamento do azurerm 5.10.0 e do azapi 2.13.0 quando o arquivo sai da configuração.
+7. Limpeza da conta descartável, com os passos que apagam pelo Pedro, um comando por vez: a exclusão com retenção deu 409 `AccountProtectedFromDeletion`; a retenção tirada não aparece no `terraform plan`; a política de ciclo de vida e a conta foram apagadas, e as 4 atribuições com escopo nela sumiram junto. Os alertas `pathsol-storage-delete-v3`, `pathsol-clear-legal-hold-v3` e `pathsol-lifecycle-delete-v3` dispararam, os dois últimos pela primeira vez.
+8. `teste-protecao.tf` fora do código e `limpeza.tfplan` salvo: 0 a criar, 0 a alterar, 1 a destruir, só no estado. Resumo em "Plano da limpeza da conta descartável".
+9. Achado menor: a cada 15 min, o Postgres grava duas linhas `LOG` de TLS fechado sem `close_notify` pela conferência do certificado do banco (`deploy/vm1/banco/pathsol_banco.py:296`). Ficam só no journal (decisão 4 abaixo).
+
+## Resultados da fatia 8 (29 e 30/10)
 
 | Teste | Resultado |
 |---|---|
@@ -124,8 +165,24 @@ Registro detalhado em `docs/operacao/2026-10-29-fatia8-testes.md`.
 | Poller com o papel restrito | O papel `pathsol-vm2-energia-v3`, sem `locations/operations/read`, leu o `Azure-AsyncOperation` e o `Location` (200) até `Succeeded`, ao contrário da página de operações assíncronas da ARM. Start em 1 min 44 s |
 | Start durante o Deallocating | O start foi aceito (202). As duas operações terminaram `Succeeded`, o start 0,16 s antes, e a VM2 ficou ligada. O `Succeeded` do deallocate não prova VM desalocada: o reconciliador e o worker leem o `PowerState` |
 | `% Used Space` contra `df` | Mesma conta do `df` (usado ÷ (usado + livre)), sem arredondar, nas duas VMs; no `/mnt` cheio, 93,045 contra 94% do `df` |
-| Alertas disparados de verdade | Dead-letter: mensagem nova 4 min 41 s depois do PutMessage, resolvido em 25 min; `nao-vazia` em 1 h 21 min (a doc fala em contagem diária). Disco 80% e 90% em 14 e 16 min. Banco: silêncio às 14:39 (resolvido às 15:25) e falha 8 min depois da linha sintética. Activity log: 23 disparos de 27 a 29/10. Silêncio da VM1 em 29/10, 01:34, antes do agente entrar na VM1 (resolvido às 02:20). Orçamento: 50% em 27/10, 02:10. Os e-mails chegam desde a confirmação do código |
-| Não testados | `pathsol-vm2-ligada-v3` (4 h de VM2, ~R$ 19), `pathsol-vm1-saude-v3` por causa da plataforma, `clear-legal-hold` (vem na limpeza) e o e-mail de teste do action group, que o Pedro não identificou com certeza |
+| Alertas disparados de verdade | Dead-letter: mensagem nova 4 min 41 s depois do PutMessage, resolvido em 25 min; `nao-vazia` em 1 h 21 min (a doc fala em contagem diária). Disco 80% e 90% em 14 e 16 min, resolvidos às 15:48 e 15:50. Banco: silêncio às 14:39 (resolvido às 15:25) e falha 8 min depois da linha sintética (resolvido às 15:59). Activity log: 23 disparos de 27 a 29/10; em 30/10, blob service (12:09), exclusão de conta negada (12:29), retenção tirada (12:34), política de ciclo de vida apagada (12:49) e conta apagada (12:54). Silêncio da VM1 em 29/10, 01:34, antes do agente entrar na VM1 (resolvido às 02:20). Orçamento: 50% em 27/10, 02:10. Os e-mails chegam desde a confirmação do código |
+| Cold pelo ciclo de vida sob retenção legal | Os blobs `a` e `c` passaram a Cold às 05:30:01 UTC de 30/10, ~15,5 h depois da criação, com o `lastModified` igual ao da criação. Confirma a inferência da seção 6.3 do plano |
+| Parada limpa do Postgres na desalocação real | No auto-shutdown de 29/10 (02:02 UTC), `database system is shut down` em 0,37 s, antes do docker e do `/srv/banco`; na partida, `database system was shut down at 2026-10-30 02:02:03 UTC`, sem recuperação |
+| Conta com retenção legal | `az storage account delete` pelo Pedro: 409 `AccountProtectedFromDeletion` ("The container(s) wsi-teste have legal hold") |
+| Retenção tirada | O `clearLegalHold` dispara o alerta em ~5 min. O `terraform plan` segue `No changes`, sem nem a nota de mudança fora do Terraform: o azapi não detecta a falta da retenção |
+| Atribuições de papel de recurso apagado | Saíram com a conta, em segundos: nem a listagem da subscrição nem o GET as encontram. A documentação não diz isso |
+| Não testados | `pathsol-vm2-ligada-v3` (4 h de VM2, ~R$ 19), `pathsol-lock-delete-v3` (só há travas de produção no grupo), o `pathsol-vm1-saude-v3` com o filtro novo (só a plataforma dispara) e o e-mail de teste do action group, que o Pedro não identificou com certeza |
+
+## Plano da limpeza da conta descartável (Terraform)
+
+`terraform plan -out=limpeza.tfplan` em 30/10, 12:48–12:50 UTC, depois da exclusão da conta pelo Pedro e da saída do `teste-protecao.tf`: **0 a criar, 0 a alterar, 1 a destruir.** Nenhum recurso com dado muda, e os outros 64 aparecem como `no-op`; nenhum recurso de VM, disco, rede, conta de WSI, Key Vault ou trava muda (conferido no JSON do plano). sha256: `435a7d7a7a95a9eda74e79f657ff7f1787c0683b98daea148e8ec4e583efbda5`.
+
+| Recurso | O quê | Custo/mês |
+|---|---|---:|
+| `azapi_resource_action.teste_legal_hold` (destruir) | Sai do estado. Com `when = "apply"`, o destroy não chama o Azure (código da tag v2.13.0 do azapi, `internal/services/azapi_resource_action_resource.go`, linhas 413–422; doc do registry: "no action will be performed on the Azure resource unless the `when` argument is set to `destroy`"). O container a que ele se refere já não existe | R$ 0 |
+| Os outros 7 objetos da conta (conta, container, política e as 4 atribuições) | Deram 404 no refresh e já não estão no estado refrescado que o apply grava; nenhuma ação (código do Read do azurerm 5.10.0: com 404, "removing from state") | R$ 0 (a conta custava < R$ 0,01) |
+
+O apply é do Pedro, pelo SSH, com o Antigravity fechado. Se o estado mudar antes, o Terraform recusa o plano velho, e outro plano é feito.
 
 ## Plano do soft delete de blobs na `pathsolwsiv3` (Terraform)
 
@@ -471,6 +528,22 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 | activity log `ResourceHealth` da VM1 (29/10, 02:51) | primeiro evento `Active`, `Unavailable`, causa `Unknown`; 8 s depois, `UserInitiated` |
 | `terraform plan -out=soft-delete.tfplan` e `-out=fim-do-dia.tfplan`; `show -json` | 1 a criar, 1 a alterar (`344897fb…aa74`); 1 a criar, 2 a alterar (`10b5ea9d…5c60`); 0 a destruir; na `pathsolwsiv3` só muda o `blob_properties` |
 | Retail Prices API (BRL, brazilsouth, General Block Blob v2) | Hot ZRS Data Stored R$ 0,2127/GB/mês; Hot LRS R$ 0,1702 |
+| `az account show` (sessão 10) | mesma subscrição, Enabled, login de usuário |
+| `sha256sum fim-do-dia.tfplan`; `terraform plan -detailed-exitcode` (sessão 10) | `10b5ea9d…5c60`, igual ao do relatório; `No changes`, saída 0 |
+| `az storage account blob-service-properties show` (4 contas) | `pathsolwsiv3`: soft delete de blob ligado, 14 dias, `allowPermanentDelete false`; versionamento, change feed e soft delete de container desligados. As outras 3 sem soft delete |
+| `az monitor activity-log alert list`; activity log do `rg-pathsol-v3` (22 h) | `pathsol-blob-service-write-v3` e `pathsol-vm1-saude-v3` (só `PlatformInitiated`) como no plano; apply de 12:02:06 a 12:02:17, sem falha; o alerta novo disparou às 12:09:11 |
+| `az network nic show`; `ip -4 addr`; `journalctl -b 0` (VM1) | `Static` 10.0.0.5; `eth0` com 10.0.0.5 pelo DHCP às 09:04:59 |
+| GET do action group (api `2026-03-01-preview`) | receptor `Verified` |
+| `az storage blob list` (`wsi-teste`) | `a` e `c` em `Cold` desde 30/10, 05:30:01 UTC; `lastModified` igual ao da criação |
+| `journalctl --list-boots`; `journalctl -b -1` e `-b 0` (VM1) | boot −1 até 02:02:06; `database system is shut down` às 02:02:03,667, antes do `srv-banco.mount` e do docker; na partida, `was shut down at 2026-10-30 02:02:03 UTC`; backup diferencial e dump às 09:05:31 |
+| `journalctl -t pathsol-banco` (desde 12:10, depois do apply do soft delete) | 7 itens `OK` às 12:15, 12:30 e 12:45, inclusive o `backup` lido pelo `pgbackrest info` |
+| `Microsoft.AlertsManagement/alerts` (7 dias) | disco 80 e 90 resolvidos às 15:48 e 15:50, falha do banco às 15:59 de 29/10; `dlq-nao-vazia` disparado; `vm1-saude` às 02:19 e 02:24 de 30/10 |
+| GET do orçamento e dos alertas de custo | R$ 2.863,13 gastos em outubro e previsão de R$ 3.117,28; só o aviso de 50% |
+| `az role definition list --name "Storage Blob Data Owner"`; `az role assignment list --all` | `Microsoft.Storage/storageAccounts/blobServices/containers/*` nas ações de plano de controle; o papel só estava com o Pedro, no `wsi-teste` |
+| activity log da limpeza (sessão 10) | `storageAccounts/delete` `Failed` 409 `AccountProtectedFromDeletion` às 12:24:04; `clearLegalHold/action` `Succeeded` às 12:29:30; `managementPolicies/delete` `Succeeded` às 12:44:49; `storageAccounts/delete` `Succeeded` às 12:47:11; disparos às 12:29:12, 12:34:10, 12:49:11 e 12:54:10 |
+| `terraform plan -detailed-exitcode` depois do `clearLegalHold` | `No changes`, saída 0, sem nota de mudança fora do Terraform |
+| `az storage account show`; `az role assignment list --all`; GET de uma atribuição (depois da exclusão) | `ResourceNotFound`; nenhuma atribuição com escopo na conta; 404 |
+| `terraform fmt -check`; `validate`; `plan -out=limpeza.tfplan`; `show -json` | formato ok; válido; 0 a criar, 0 a alterar, 1 a destruir; 64 `no-op` e 1 `delete` |
 
 ## O que não foi possível verificar
 
@@ -479,13 +552,15 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - Se a VM2 chegou a desligar o SO no deallocate que o start interrompeu (15:01): a próxima partida dela mostra os boots (`journalctl --list-boots`).
 - Se a VM1 usa o cache de host: o `az vm list-skus` não traz `CachedDiskBytes` para a D8s_v5, mas o P20 aceitou ReadWrite.
 - Se um prefixo igual ao nome do container (`wsi-diagnose`) também pega um container de nome mais longo (`wsi-diagnose2`). A doc não diz. Aqui não faz diferença, porque todo container `wsi-*` é de WSI.
-- Se o ciclo de vida muda a camada de um blob sob retenção legal (seção 6.3 do plano: inferência). Os blobs `a` e `c` do `wsi-teste` nasceram às 13:57 de 29/10; conferir a camada em 30/10.
-- A resolução do alerta `pathsol-dlq-nao-vazia-v3`, que depende de a mensagem de teste expirar (31/10, 02:02 UTC).
-- Se o pgBackRest lista blobs em soft delete (depois do apply do soft delete).
+- Quem mudou a camada dos blobs de teste para Cold. Só há o horário (05:30:01 UTC, os dois no mesmo segundo, com a VM1 desalocada), porque o plano de dados não vai ao activity log. O conteúdo foi comparado pelo `lastModified` e pelo ETag: o sha256 da sessão 9 ficou no `/tmp`, que a partida da VM1 limpou.
+- A resolução do alerta `pathsol-dlq-nao-vazia-v3`, que depende de a mensagem de teste expirar (31/10, 02:02 UTC, depois do fim da sessão 10).
+- Se o `pathsol-vm1-saude-v3`, só com `PlatformInitiated`, fica quieto na desalocação. A prova é o auto-shutdown de 30/10 (31/10, 02:00 UTC), conferido na próxima sessão. O disparo real dele depende de um evento da plataforma, que não dá para provocar.
+- O `pathsol-lock-delete-v3` e o `pathsol-vm2-ligada-v3` nunca dispararam (decisão 3).
+- Se os e-mails dos alertas de 30/10 chegaram: o activity log mostra o action group chamado em cada disparo, e a confirmação foi pedida ao Pedro.
+- O pgBackRest diante de uma cópia em soft delete. Desde o apply, o `pgbackrest info` lê o repositório sem erro, mas a primeira regravação do `backup.info`, que cria a primeira cópia em soft delete, só acontece no próximo backup.
 - Se a regra `AgentSettings` limita mesmo o cache do agente no Linux (recurso que aparece como preview).
 - A renovação do certificado novo, de verdade ou por `certbot renew --dry-run`: o dry-run usa a conta de staging, que o CAA atual não permite.
 - O conteúdo do `status.json` gravado no desligamento real: o journal mostra o HTTP 201, mas o `up` da partida sobrescreve o arquivo. O `back_at` fica coberto pelos testes da unit.
-- A parada limpa do Postgres na desalocação real. A prova é o auto-shutdown das 23:00 de 29/10: no log da partida seguinte, `database system was shut down` e nenhum `interrupted`.
 - O arquivamento assíncrono com `--init` diante de uma falha real de rede: a árvore de processos mostra o órfão com o `docker-init`, mas a falha não foi provocada.
 - O teto de 8 GiB da fila de WAL atingido de verdade.
 - A ordenação em português com o provedor builtin; fica para a Fase 5, com colação ICU onde precisar.
@@ -503,15 +578,26 @@ O orçamento manda e-mail direto, sem passar pelo action group, para não depend
 - **Teto de cache do agente em preview e VM2 com o `/` em 71% de 29G.** O agente ocupa ~0,85 GB em cada VM. No pior caso (agente sem rede), o cache de até 4.000 MB e a fila do rsyslog, de até 1 GB, levam o `/` da VM2 para perto de 88%; os alertas de disco avisam em 80%.
 - **PowerShell 7.6 do Automation em build preview.** O teste do runbook rodou com `7.6.0-preview.5`, embora a doc diga GA desde julho de 2026. O código só usa `Invoke-RestMethod` e `Invoke-WebRequest`; trocar de ambiente é um PATCH no runbook novo.
 - **Chaves da conta de automação no estado.** O data source `azurerm_automation_account` chama `listKeys` em todo plan, como as contas de storage e o Log Analytics.
-- **Backups apagáveis de dentro da VM1.** A identidade do sistema da VM1 tem o papel de backup, que apaga blobs no `backup-banco`, porque o expire do pgBackRest precisa disso. Qualquer processo da VM1 obtém o token pelo IMDS; quem tomar a VM1 apaga o banco e os backups. Com o apply do soft delete (decisão do Pedro de 29/10), um backup apagado ou sobrescrito volta por 14 dias; o container em si não tem soft delete, mas a VM1 não tem `containers/delete`.
-- **IP privado dinâmico da VM1.** O Postgres escuta em 10.0.0.5, e as regras 80 e 443 do NSG apontam para 10.0.0.5. A VM2 já está com 10.0.0.4 estático (29/10); a VM1 muda como última ação da sessão 9, antes do apply do Pedro.
+- **Backups apagáveis de dentro da VM1.** A identidade do sistema da VM1 tem o papel de backup, que apaga blobs no `backup-banco`, porque o expire do pgBackRest precisa disso. Qualquer processo da VM1 obtém o token pelo IMDS; quem tomar a VM1 apaga o banco e os backups. Desde o apply de 30/10 (decisão do Pedro de 29/10), um backup apagado ou sobrescrito volta por 14 dias; o container em si não tem soft delete, mas a VM1 não tem `containers/delete`.
+- **Retenção legal tirada não aparece no Terraform.** Provado em 30/10: depois do `clearLegalHold`, o `terraform plan` segue sem mudanças e sem nota, porque o azapi não relê a retenção. A única detecção é o `pathsol-clear-legal-hold-v3`, que dispara em ~5 min. Quem recebe o e-mail confere no activity log quem tirou; pôr a retenção de volta pede um apply com `-replace` do `azapi_resource_action` daquele container, com plano aprovado.
+- **Storage Blob Data Owner também tira a retenção legal.** O papel tem `Microsoft.Storage/storageAccounts/blobServices/containers/*` nas ações de plano de controle, o que inclui o `clearLegalHold` e a exclusão de container vazio, além de Owner, Contributor e Storage Account Contributor (seção 6.4 do plano). Nenhuma identidade da v3 pode recebê-lo num container de WSI. Hoje ninguém o tem: o do Pedro no `wsi-teste` saiu com a conta.
 - **Tentativa negada de quem não tem permissão não aparece no activity log.** A tentativa da VM1 de apagar um container pela ARM (403) não gerou evento nem alerta; só aparece a tentativa de quem tem a permissão e é barrado depois (trava ou retenção). No plano de dados, nada vai para o activity log. Ver tentativas negadas exigiria logs de recurso do storage, com custo; registrado no `docs/v3/roadmap.md`.
-- **Alerta de saúde da VM1 em toda desalocação.** Com a causa `Unknown`, o `pathsol-vm1-saude-v3` dispara toda noite no auto-shutdown. A correção está no `fim-do-dia.tfplan`; se o Pedro aplicar o `soft-delete.tfplan`, vem no próximo plano, e até lá chegam 1 ou 2 e-mails de sev. 4 por noite.
+- **Alerta de saúde da VM1 só com causa da plataforma.** Com a causa `Unknown`, o `pathsol-vm1-saude-v3` disparava em toda desalocação (29 e 30/10). Desde o apply de 30/10, só `PlatformInitiated` dispara. Uma falha real que chegue primeiro com causa `Unknown`, como a desalocação de 29/10 chegou, também fica sem esse e-mail; o `pathsol-vm1-silencio-v3` (sev. 1, 10 min sem heartbeat) cobre a VM1 fora do ar no horário dela.
 - **Certificado TLS do banco vence em 28/10/2028.** A verificação avisa 21 dias antes; a troca exige atualizar o certificado fixado no worker.
 - **Imagem do banco congelada.** O 18.7 sai em 12/11/2026; atualizar é refazer o build com o digest novo e rodar o teste de restauração.
 - **Partida da VM1 pelo runbook.** Provada em 29/10. Se um dia falhar, a VM1 fica desalocada até alguém ligá-la; o alerta `pathsol-vm1-silencio-v3` avisa a partir das 06:20, e a volta é ligar pelo Portal.
 
 ## Decisões pedidas ao Pedro
+
+**Para o gate (sessão 10, 30/10):**
+1. **Aprovação da Fase 3:** "APROVADO FASE 3", ou o que falta.
+2. **Fatia 0, exportação de teste do Motic:** passa para a Fase 4, junto do leitor e da desidentificação (fatias 6 e 10 da Fase 4 na seção 19.2), ou fica como pendência da Fase 3 até a exportação chegar.
+3. **`pathsol-lock-delete-v3` e `pathsol-vm2-ligada-v3`:** testar de verdade antes do go-live, com os alarmes da Fase 8 (o da VM2 custa ~R$ 19 por teste; o da trava pede uma trava criada e apagada por Terraform só para isso), ou aceitar como estão: o caminho até o e-mail é o mesmo das regras que já dispararam.
+4. **Ruído do TLS no log do Postgres:** corrigir quando o `pathsol_banco.py` for mexido na Fase 4 (fechar o TLS com `unwrap()` antes de sair, com teste e autorização para reinstalar o script), ou deixar como está.
+5. **`limpeza.tfplan`** (sha256 `435a7d7a7a95a9eda74e79f657ff7f1787c0683b98daea148e8ec4e583efbda5`): aplicar como última ação da sessão 10, pelo SSH e com o Antigravity fechado, e conferir na próxima sessão; ou deixar para o primeiro plano da Fase 4. No fim do dia, `az logout` (decisão 4).
+6. **E-mails dos alertas de 30/10:** confirmar se chegaram os das 12:09 (blob service), 12:29 e 12:54 (exclusão de conta, negada e feita), 12:34 (retenção tirada) e 12:49 (política de ciclo de vida apagada).
+
+**Já respondidas:**
 
 Respondidas em 28/10, ~23:00 UTC: o Pedro aprovou o apply do `fatias6-7.tfplan` e pediu por escrito a regra `backup-dump-35d`; o padrão 27 usa PowerShell 7.6; a extensão `log-analytics` saiu e o `az` não instala mais extensões sozinho (`extension.use_dynamic_install=no`).
 
@@ -525,4 +611,6 @@ Respondidas na sessão 9 (29/10, ~13:50 UTC): IPs privados estáticos, uma açã
 
 Respondida na sessão 9 (~15:37 UTC): o Pedro aplica o `fim-do-dia.tfplan` (sha256 `10b5ea9da4febfae5c2ca99ce2c06018f1e4a75435dc9b2dd836c2d5f0775c60`) pelo SSH, com o Antigravity fechado, depois da última ação da sessão (o IP estático da VM1), e faz o `az logout` no fim. O `soft-delete.tfplan` fica velho e não é aplicado. Antes do commit, a VM2 estava desalocada (15:39 UTC).
 
-**Próxima sessão:** conferir o apply (sha256, `terraform plan` sem mudanças, soft delete de blobs na `pathsolwsiv3` com 14 dias e `allowPermanentDelete false`, o alerta novo, o `pathsol-vm1-saude-v3` só com `PlatformInitiated` e o activity log) e o IP da VM1 (registro local em `docs/operacao/2026-10-29-fatia8-testes.md`, ainda sem commit); depois, a camada Cold dos blobs `a` e `c`, a parada limpa do Postgres no auto-shutdown das 23:00 de 29/10, a resolução dos alertas e a limpeza da conta descartável (os passos que apagam pelo Pedro).
+Respondida na sessão 10 (30/10, ~12:15 UTC): a limpeza da conta descartável seguiu com os passos que apagam pelo Pedro, um comando por vez, mais o passo opcional da política de ciclo de vida, para o alerta que nunca tinha disparado.
+
+PARADO — aguardando APROVADO FASE 3

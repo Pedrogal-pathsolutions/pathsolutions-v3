@@ -87,3 +87,51 @@ Feito depois do commit `37e52c5`, do push e da conferência por hash (local igua
 - Depois (16:02): `eth0` 10.0.0.5/24, rota padrão pelo DHCP; o Postgres escuta em 127.0.0.1 e 10.0.0.5; `pathsol-banco`, `docker` e `nginx` ativos; verificação do banco com os 7 itens `OK`; `https://app.pathsolutions.com.br/` responde 503 (a resposta do nginx novo), em 0,08 s; a VM1 está ligada desde 09:01:41, sem reinício.
 - Activity log: `networkInterfaces/write` do NIC da VM1 `Started` 15:40:09,61, `Accepted` 15:40:09,80 e `Succeeded` 15:40:19,10.
 - Partida seguinte (sessão 10, 30/10): `eth0` com 10.0.0.5/24 pelo DHCP do Azure (168.63.129.16) às 09:04:59 UTC; o NIC continua `Static`, 10.0.0.5, com accelerated networking; o Postgres voltou a escutar em 127.0.0.1 e 10.0.0.5.
+
+## Sessão 10 (30/10, a partir das 12:04 UTC)
+
+O Pedro aplicou o `fim-do-dia.tfplan` (1 criado, 2 alterados, 0 destruídos, nas palavras dele) e seguiu no `az`.
+
+### Conferência do apply do `fim-do-dia.tfplan`
+
+- `az account show`: subscrição `bd87a1ca-…`, Enabled, login de usuário.
+- `sha256sum fim-do-dia.tfplan`: `10b5ea9da4febfae5c2ca99ce2c06018f1e4a75435dc9b2dd836c2d5f0775c60`, igual ao do relatório.
+- `terraform plan -detailed-exitcode` (12:06–12:08 UTC): `No changes`, saída 0.
+- `pathsolwsiv3` (`blob-service-properties show`): `deleteRetentionPolicy` ligado, 14 dias, `allowPermanentDelete false`; versionamento, change feed e soft delete de container desligados, último acesso nulo, CORS vazio. As contas `pathsoldlqv3`, `pathsolstatusv3` e `pathsoltestev3` seguem sem soft delete.
+- `pathsol-blob-service-write-v3`: `blobServices/write` no `rg-pathsol-v3`, `Succeeded` ou `Failed`, ligado, no `pathsol-alertas-v3`, com as 3 tags. `pathsol-vm1-saude-v3`: `ResourceHealth`, `Unavailable` ou `Degraded`, só a causa `PlatformInitiated`.
+- Activity log do `rg-pathsol-v3` (22 h): o apply de 12:02:06 a 12:02:17 UTC, pelo usuário do Pedro (2 `activityLogAlerts/write`, 1 `blobServices/write` e 1 `listKeys`), nenhum com falha. As únicas falhas da janela são as 3 exclusões negadas da sessão 9.
+- O alerta novo disparou às 12:09:11 UTC com o `blobServices/write` do próprio apply, 7 min depois, chamando o `pathsol-alertas-v3`. O receptor do action group segue `Verified` (API `2026-03-01-preview`).
+
+### Camada Cold sob retenção legal
+
+- `az storage blob list` no `wsi-teste` (login do Pedro, Storage Blob Data Owner no container), 12:12 UTC: os blobs `a` e `c` em `Cold`, com `blobTierChangeTime` de 30/10, 05:30:01 UTC, ~15,5 h depois da criação; `lastModified` igual ao da criação (29/10, 13:57:08 e 13:57:09); 8.192 bytes cada; ETags `0x8DF35C48610AB05` e `0x8DF35C4865A8041`.
+- A camada mudou sob retenção legal sem nova gravação do conteúdo. Isso confirma a inferência da seção 6.3 do plano (decisão 1, opção B). O autor da mudança não aparece em log: o plano de dados não vai ao activity log, e a conta não tem logs de recurso. Às 05:30 UTC a VM1 estava desalocada, e os dois blobs mudaram no mesmo segundo: indício da execução do ciclo de vida, não prova.
+- O sha256 e o ETag lidos na sessão 9 ficaram no `/tmp` dela, que a partida da VM1 limpou; a comparação é pelo `lastModified`.
+
+### Parada limpa do Postgres no auto-shutdown de 29/10
+
+- `journalctl --list-boots`: boot −1 de 29/10, 09:01:44, a 30/10, 02:02:06 UTC; boot 0 desde 30/10, 09:04:52 UTC.
+- Boot −1: `hv_utils: Shutdown request received` 02:02:03,121; `Stopping pathsol-banco.service` ,240; `received fast shutdown request` ,298; `checkpoint starting: shutdown immediate` ,329; `database system is shut down` ,667; unit parada ,756. Só depois: `Unmounting srv-banco.mount` ,764, docker parando ,766 e `/srv/banco` desmontado ,789. A unit com `RequiresMountsFor=/srv/banco` e `After=docker.service` (achado da sessão 8) faz o Postgres parar antes do docker e do disco.
+- Boot 0: `database system was shut down at 2026-10-30 02:02:03 UTC` e `ready to accept connections` às 09:05:24,614; nenhuma linha com `interrupted`, `recovery` ou `not properly shut down`. A rotina diária rodou na partida (`Persistent`): `OK backup: diff em 3 s` e `OK dump` às 09:05:31–32. A verificação tem os 7 itens `OK` desde a partida.
+- Status: `down: HTTP 201` às 02:02:03,641 no desligamento e `up: HTTP 201` às 09:05:05 na partida.
+- Achado menor: a cada 15 min, o Postgres grava `SSL error: unexpected eof while reading` e `could not receive data from client: Connection reset by peer` (nível `LOG`). Vem da conferência do certificado do banco (`postgres_cert`, `deploy/vm1/banco/pathsol_banco.py:296`), que fecha o TLS sem `close_notify`. Fica só no journal: o agente coleta o `local0`, e o Postgres escreve pelo docker.
+
+### Alertas (`Microsoft.AlertsManagement/alerts`, 7 dias, leitura às ~12:10 UTC)
+
+- Resolvidos: `pathsol-disco-80-v3` às 15:48:08 e `pathsol-disco-90-v3` às 15:50:14 de 29/10 (o `/mnt` foi esvaziado às 14:54, e a VM2, desalocada às 15:01); `pathsol-banco-falha-v3` às 15:59:33. Já registrados: `pathsol-dlq-mensagem-nova-v3` (14:32:33), `pathsol-banco-silencio-v3` (15:25:13) e `pathsol-vm1-silencio-v3` (29/10, 02:20:38).
+- Ainda disparado: `pathsol-dlq-nao-vazia-v3`, desde 15:24:17 de 29/10. A mensagem de teste expira em 31/10, 02:02:47 UTC, depois do fim desta sessão; a resolução depende dessa expiração e da janela de 1 dia da regra.
+- `pathsol-vm1-saude-v3` disparou às 02:19:10 e 02:24:10 UTC de 30/10, no auto-shutdown, antes do apply da correção (12:02). A prova da correção é o auto-shutdown seguinte (31/10, 02:00 UTC) sem disparo.
+- Na partida de 30/10, nem o `pathsol-vm1-silencio-v3` nem o `pathsol-banco-silencio-v3` dispararam.
+- Orçamento (GET, api 2023-11-01): gasto de outubro de R$ 2.863,13 e previsão de R$ 3.117,28 (preço de tabela), abaixo do aviso de 80%. Só o aviso de 50% disparou (27/10, 02:10:35 UTC).
+
+### Limpeza da conta descartável (passos que apagam pelo Pedro, um comando por vez)
+
+Estado de partida (12:15 UTC): `wsi-teste` com `hasLegalHold true` (tag `teste`, gravada pelo usuário do Pedro em 29/10, 13:00:56), sem política por tempo; os blobs `a` e `c` em Cold; 4 atribuições com escopo na conta (VM1 com o papel sem exclusão no container e o Storage Blob Delegator na conta; VM2 com o Storage Blob Data Reader e o Pedro com o Storage Blob Data Owner, os dois no container); nenhuma trava na conta (as 2 travas do grupo estão na `pathsolwsiv3` e na `pathsoltfstatev3`). Leitura da documentação oficial antes (workflow de 4 tópicos, sem comando no Azure): a conta com retenção legal num container com blobs não se apaga (Data protection overview, 02/10/2026), e o código listado para isso é `AccountProtectedFromDeletion` (409).
+
+1. 12:24:04, Pedro: `az storage account delete -g rg-pathsol-v3 -n pathsoltestev3 --yes`. Activity log: `Failed`, `Conflict`, `{"code":"AccountProtectedFromDeletion","message":"pathsoltestev3 is protected from deletion.The container(s) wsi-teste have legal hold."}`. Conta e blobs intactos (mesmos ETags e `lastModified`). `pathsol-storage-delete-v3` disparou às 12:29:12.
+2. 12:29:30, Pedro: `az storage container legal-hold clear -g rg-pathsol-v3 --account-name pathsoltestev3 --container-name wsi-teste --tags teste`. Activity log: `clearLegalHold/action` `Succeeded` às 12:29:30,709. GET do container: `hasLegalHold false`, tags vazia; blobs iguais. `pathsol-clear-legal-hold-v3` disparou às 12:34:10, o primeiro disparo dele.
+   - `terraform plan -detailed-exitcode` às 12:30 UTC: `No changes`, saída 0, sem a nota de mudança fora do Terraform; o estado guarda `has_legal_hold = true` no container. O Terraform não vê uma retenção tirada, e só o alerta de activity log avisa (seção 6.3 do plano).
+3. 12:44:49, Pedro (passo opcional, para o alerta que nunca tinha disparado): `az storage account management-policy delete -g rg-pathsol-v3 --account-name pathsoltestev3`. Activity log: `managementPolicies/delete` `Succeeded` às 12:44:49,878. Depois: `ManagementPolicyNotFound` na conta descartável; a política da `pathsolwsiv3` segue com as 3 regras e o `lastModifiedTime` de 29/10, 01:23:30. `pathsol-lifecycle-delete-v3` disparou às 12:49:11, o primeiro disparo dele.
+4. 12:47:06, Pedro: `az storage account delete -g rg-pathsol-v3 -n pathsoltestev3 --yes`. Activity log: `storageAccounts/delete` `Succeeded` às 12:47:11,772; `pathsol-storage-delete-v3` disparou de novo às 12:54:10. Conferência às 12:47:24: `ResourceNotFound`; as contas `pathsoldlqv3`, `pathsolstatusv3`, `pathsoltfstatev3` e `pathsolwsiv3` em `Succeeded`, as 2 travas no lugar e 32 recursos de topo no grupo (eram 33). As 4 atribuições com escopo na conta saíram da listagem da subscrição (`az role assignment list --all`), e o GET direto de uma delas dá 404 `ResourceNotFound`: a ARM as tirou junto com a conta. A documentação não diz isso.
+
+**Código e estado.** O `teste-protecao.tf` saiu do código (`git rm`). `terraform fmt -check` e `validate` ok; `terraform plan -out=limpeza.tfplan` às 12:48–12:50 UTC: **0 a criar, 0 a alterar, 1 a destruir.** No JSON do plano, 64 `no-op` e 1 `delete`: o `azapi_resource_action.teste_legal_hold` (`delete_because_no_resource_config`). Os outros 7 objetos (conta, container, política e as 4 atribuições) deram 404 no refresh e já não estão no estado refrescado, que tem 65 recursos gerenciados; depois do apply ficam 64. Com `when = "apply"`, o destroy do `azapi_resource_action` não chama o Azure, só tira o objeto do estado (código da tag v2.13.0 do azapi, `internal/services/azapi_resource_action_resource.go`, linhas 413–422; doc do registry: "no action will be performed on the Azure resource unless the `when` argument is set to `destroy`"). sha256: `435a7d7a7a95a9eda74e79f657ff7f1787c0683b98daea148e8ec4e583efbda5`.
