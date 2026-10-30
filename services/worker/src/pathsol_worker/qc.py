@@ -11,6 +11,18 @@ import numpy as np
 # Provisional until calibrated on the acceptance slides; part of qc_version.
 MIN_SATURATION = 15
 FOCUS_NEIGHBOURHOOD = np.ones((3, 3), dtype=np.uint8)
+# Plan 10.4: QC 1 works on a thumbnail of about 2 to 8 µm/px.
+QC1_MPP = 4.0
+# Plan 10.4: patches with 10% or more tissue go to Hibou-L; the head's
+# configuration decides later which of them it uses.
+EXTRACTION_FLOOR = 0.10
+
+
+def thumbnail_mask(slide):
+    """QC 1 base: (tissue mask of the thumbnail, level-0 pixels per mask pixel, threshold)."""
+    thumb, downsample = slide.thumbnail(QC1_MPP)
+    threshold = tissue_threshold(thumb)
+    return tissue_mask(thumb, threshold), downsample, threshold
 
 
 def saturation(rgb):

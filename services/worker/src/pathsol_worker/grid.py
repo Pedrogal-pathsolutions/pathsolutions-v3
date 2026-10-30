@@ -23,6 +23,13 @@ def coordinates(width, height, side):
     return np.stack([gx.ravel(), gy.ravel()], axis=1)
 
 
+def candidates(dimensions, mpp, mask, downsample):
+    """(side, cells with any tissue in the thumbnail mask); QC 2 on the patch decides later."""
+    side = side_level0(mpp)
+    coords = coordinates(*dimensions, side)
+    return side, coords[cell_fractions(mask, downsample, coords, side) > 0]
+
+
 def cell_fractions(mask, downsample, coords, side):
     """Fraction of True mask pixels under each cell; the mask is downsample times smaller than level 0."""
     height, width = mask.shape
