@@ -1,0 +1,223 @@
+{
+  "inicio_utc": "2026-10-30T18:39:24+00:00",
+  "carga": {
+    "cuda_s": 0.27,
+    "modelo_s": 0.37,
+    "modelo_pronto_utc": "2026-10-30T18:39:25+00:00"
+  },
+  "gpu": {
+    "fp16": [
+      {
+        "lote": 32,
+        "patches_s": 78.0,
+        "memoria_gib": 1.61
+      },
+      {
+        "lote": 64,
+        "patches_s": 72.2,
+        "memoria_gib": 2.06
+      },
+      {
+        "lote": 128,
+        "patches_s": 72.9,
+        "memoria_gib": 2.97
+      },
+      {
+        "lote": 256,
+        "patches_s": 74.6,
+        "memoria_gib": 4.78
+      }
+    ],
+    "fp32": [
+      {
+        "lote": 32,
+        "patches_s": 21.0,
+        "memoria_gib": 1.7
+      },
+      {
+        "lote": 64,
+        "patches_s": 19.6,
+        "memoria_gib": 2.25
+      },
+      {
+        "lote": 128,
+        "patches_s": 21.2,
+        "memoria_gib": 3.35
+      },
+      {
+        "lote": 256,
+        "patches_s": 19.1,
+        "memoria_gib": 5.55
+      }
+    ]
+  },
+  "laminas": [
+    {
+      "arquivo": "acad5023-32f0-48aa-b4dd-80df4b06fd4d.svs",
+      "dimensoes": [
+        49880,
+        57872
+      ],
+      "mpp": 0.252,
+      "niveis": 4,
+      "lado_nivel0": 444,
+      "candidatos": 8123,
+      "mascara_s": 1.2,
+      "cpu": [
+        {
+          "processos": 1,
+          "patches_s": 49.9
+        },
+        {
+          "processos": 2,
+          "patches_s": 59.0
+        },
+        {
+          "processos": 3,
+          "patches_s": 72.4
+        }
+      ],
+      "extraidos": 4618,
+      "rejeitados": 3505,
+      "extracao_s": 69.77,
+      "ponta_a_ponta_s": 70.97,
+      "patches_s": 66.2,
+      "gpu_ocupada": 0.939,
+      "cosseno_fp16_fp32": {
+        "n": 256,
+        "media": 0.9999898392887762,
+        "minimo": 0.9999316197904285,
+        "nan_inf": false
+      }
+    },
+    {
+      "arquivo": "489a4eee-7f35-451f-b97f-30229c582ffd.svs",
+      "dimensoes": [
+        40192,
+        26880
+      ],
+      "mpp": 0.2325,
+      "niveis": 3,
+      "lado_nivel0": 482,
+      "candidatos": 2140,
+      "mascara_s": 0.46,
+      "cpu": [
+        {
+          "processos": 1,
+          "patches_s": 27.8
+        },
+        {
+          "processos": 2,
+          "patches_s": 41.1
+        },
+        {
+          "processos": 3,
+          "patches_s": 54.1
+        }
+      ],
+      "extraidos": 1907,
+      "rejeitados": 233,
+      "extracao_s": 31.46,
+      "ponta_a_ponta_s": 31.92,
+      "patches_s": 60.6,
+      "gpu_ocupada": 0.855,
+      "cosseno_fp16_fp32": {
+        "n": 256,
+        "media": 0.9999986601073927,
+        "minimo": 0.9999931590117175,
+        "nan_inf": false
+      }
+    },
+    {
+      "arquivo": "4ecadacd-3ed0-4b61-a2b1-6ccba5d96a6e.svs",
+      "dimensoes": [
+        41831,
+        22494
+      ],
+      "mpp": 0.4943,
+      "niveis": 3,
+      "lado_nivel0": 227,
+      "candidatos": 5316,
+      "mascara_s": 6.48,
+      "cpu": [
+        {
+          "processos": 1,
+          "patches_s": 215.7
+        },
+        {
+          "processos": 2,
+          "patches_s": 110.7
+        },
+        {
+          "processos": 3,
+          "patches_s": 117.3
+        }
+      ],
+      "extraidos": 4809,
+      "rejeitados": 507,
+      "extracao_s": 75.13,
+      "ponta_a_ponta_s": 81.61,
+      "patches_s": 64.0,
+      "gpu_ocupada": 0.944,
+      "cosseno_fp16_fp32": {
+        "n": 256,
+        "media": 0.9999988883317555,
+        "minimo": 0.9999925376524903,
+        "nan_inf": false
+      }
+    },
+    {
+      "arquivo": "b1f6b0eb-9032-4f2c-91f9-00ef3e5106d0.svs",
+      "dimensoes": [
+        95616,
+        89494
+      ],
+      "mpp": 0.2525,
+      "niveis": 4,
+      "lado_nivel0": 444,
+      "candidatos": 25503,
+      "mascara_s": 3.91,
+      "cpu": [
+        {
+          "processos": 1,
+          "patches_s": 88.8
+        },
+        {
+          "processos": 2,
+          "patches_s": 81.5
+        },
+        {
+          "processos": 3,
+          "patches_s": 92.8
+        }
+      ],
+      "extraidos": 20738,
+      "rejeitados": 4765,
+      "extracao_s": 321.34,
+      "ponta_a_ponta_s": 325.25,
+      "patches_s": 64.5,
+      "gpu_ocupada": 0.986,
+      "cosseno_fp16_fp32": {
+        "n": 256,
+        "media": 0.999998052979588,
+        "minimo": 0.9999871367555945,
+        "nan_inf": false
+      }
+    }
+  ],
+  "versoes": {
+    "torch": "2.14.1+cu132",
+    "cuda": "13.2",
+    "cudnn": 92400,
+    "transformers": "4.57.6",
+    "pillow": "12.3.0",
+    "numpy": "2.5.4",
+    "opencv": "4.14.0",
+    "openslide": "4.0.1",
+    "gpu": "Tesla T4",
+    "driver": "595.71.05",
+    "cpus": 4
+  },
+  "lote_usado": 32,
+  "fim_utc": "2026-10-30T18:52:42+00:00"
+}

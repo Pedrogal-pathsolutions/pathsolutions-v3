@@ -7,7 +7,7 @@ Relatório parcial. A fase começou em 30/10/2026 (~16:15 UTC), na sessão 1, de
 | Fatia | Situação |
 |---|---|
 | Skill `pathsol-contrato-h5` com a decisão 5 | feita (`643baf8`): diff mostrado ao Pedro antes do código e aprovado, com os 7 pontos de fora do texto da decisão 5 |
-| 1. Benchmark na VM2 | em curso: imagem do worker, leitor, grade, métricas de QC 2, extrator e benchmark com 40 testes, mais 2 com os pesos reais; quatro lâminas TCGA-STAD escolhidas; falta rodar na VM2 |
+| 1. Benchmark na VM2 | feita (30/10, 17:42–18:57 UTC): 4 lâminas TCGA-STAD, fp16 e fp32, CPU, tempo por lâmina e partida (a frio, na fatia 9). O benchmark achou um defeito na escolha do nível da miniatura, corrigido em `42fdfe3`. Resultado abaixo e em `docs/v3/04-benchmark-vm2.json` |
 | 2. Pesos do Hibou-L | feita na VM1: o Pedro baixou a revisão fixada pelo terminal dele (17:21 UTC), com o script de `ed28b16`; hashes e licença conferidos; código lido antes de rodar; atenção fixada em eager. Faltam a cópia no container `modelos` (depois do apply) e a cópia na VM2 (com o benchmark) |
 | 3 a 11 | não começadas |
 
@@ -26,6 +26,41 @@ Relatório parcial. A fase começou em 30/10/2026 (~16:15 UTC), na sessão 1, de
 - **Código lido antes de rodar** (`configuration_dinov2.py`, 188 linhas; `modeling_dinov2.py`, 997): sem rede, subprocesso, `eval`/`exec` ou escrita em disco; o único `requests` está num exemplo de docstring. Importa `transformers.onnx`, que existe na 4.57.6. ViT-L/14 com 24 camadas, 16 cabeças, FFN SwiGLU, `layerscale` e 4 registradores inseridos depois do CLS: 1 + 4 + 256 = 261 tokens. Em 224 × 224 os embeddings de posição entram sem interpolação. O `pooler_output` é o CLS depois da `layernorm` final.
 - **Atenção: eager.** A atenção do código fixado é uma só (`Dinov2SelfAttention`, matmul e softmax explícitos), e a classe não declara suporte a SDPA. Trocar a atenção exigiria mudar o código, que tem o hash no `extractor_version`: seria outra versão, só com aprovação do Pedro.
 - **Processador oficial não diverge do plano:** o `preprocessor_config.json` tem a média e o desvio do plano, redimensionamento bicúbico pelo menor lado até 224 e recorte central de 224. Num quadrado, isso é o bicúbico do Pillow que o worker usa. Provado no teste com os pesos reais (`test_modelo_real.py`): o tensor que chega ao modelo pelo caminho do worker é igual ao do processador oficial, com tolerância de 1e-5, num quadrado de 448 px. Por isso a troca não volta ao Pedro.
+
+## Benchmark na VM2 (fatia 1)
+
+Imagem `pathsol-worker:42fdfe3` (torch `2.14.1+cu132`, CUDA 13.2, cuDNN 9.24, transformers 4.57.6, Pillow 12.3.0, OpenSlide 4.0.1), Tesla T4 com o driver 595.71.05, 4 vCPUs. Atenção eager. O container rodou sem rede e com os pesos só para leitura. JSON completo em `docs/v3/04-benchmark-vm2.json`; registro em `docs/operacao/2026-10-30-fase4-sessao1.md`.
+
+**GPU** (`embed`: envio, normalização, modelo e volta; 10 s por linha; a 1ª execução deu os mesmos números, a menos de 0,2):
+
+| Lote | fp16, patches/s | memória | fp32, patches/s | memória |
+|---:|---:|---:|---:|---:|
+| 32 | 78,0 | 1,61 GiB | 21,0 | 1,70 GiB |
+| 64 | 72,2 | 2,06 GiB | 19,6 | 2,25 GiB |
+| 128 | 72,9 | 2,97 GiB | 21,2 | 3,35 GiB |
+| 256 | 74,6 | 4,78 GiB | 19,1 | 5,55 GiB |
+
+A T4 satura já com lote 32; fp16 é ~3,7 vezes mais rápido que fp32. As duas faixas do plano (fp16 de 50 a 110, fp32 de 14 a 30) contêm o medido.
+
+**Por lâmina** (fp16, lote 32, 3 processos lendo, piso de 10% de tecido):
+
+| Lâmina | Papel | mpp | Lado (nível 0) | Candidatos | Extraídos | Abaixo do piso | Miniatura | Extração | Patches/s | GPU ocupada | Cosseno fp16 × fp32 (média; mínimo) |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| `acad5023` | biópsia | 0,2520 | 444 | 8.123 | 4.618 | 3.505 | 1,2 s | 69,8 s | 66,2 | 93,9% | 0,99999; 0,99993 |
+| `489a4eee` | biópsia | 0,2325 | 482 | 2.140 | 1.907 | 233 | 0,5 s | 31,5 s | 60,6 | 85,5% | 0,999999; 0,999993 |
+| `4ecadacd` | biópsia | 0,4943 | 227 | 5.316 | 4.809 | 507 | 6,5 s | 75,1 s | 64,0 | 94,4% | 0,999999; 0,999993 |
+| `b1f6b0eb` | peça | 0,2525 | 444 | 25.503 | 20.738 | 4.765 | 3,9 s | 321,3 s | 64,5 | 98,6% | 0,999998; 0,99999 |
+
+O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
+- **A GPU limita, não a CPU.** De ponta a ponta, a GPU fica ocupada de 85% a 99% do tempo: a CPU segura o ritmo, salvo de 1% a 15%. O gatilho da NC8as (CPU limitando mais de 30%, padrão 7) não dispara. A medida isolada da CPU (600 candidatos por lâmina, com 1, 2 e 3 processos) saiu distorcida pela partida dos processos: 50 a 216 patches/s com 1 processo, e menos com 2 ou 3 na lâmina a 0,49 µm/px, que quase não reamostra. Vale a ocupação da GPU.
+- **fp16 passa no critério do plano com folga:** em 1.024 patches reais, o cosseno médio fica acima de 0,99999 e o mínimo em 0,99993, sem NaN nem Inf (o limiar é 0,999). A validação formal, antes do primeiro `.h5` do acervo, fica na fatia 7, com o código final.
+- **Tempo por lâmina na VM2, miniatura e extração:** de 32 a 82 s nas três do papel de biópsia (1.907 a 4.809 patches) e 325 s na peça (20.738 patches), a ~64 patches/s. Cada 1.000 patches custam ~16 s de VM2 (~R$ 0,02). Fora: download do Blob e envio do `.h5`, medidos no aceite (fatia 11).
+- **Contra o plano (seção 8.4):** "~1 min por biópsia" confere com as três primeiras. A peça mediu 5,4 min, acima dos ~3 min do pior caso do plano. Se o volume for de peças grandes como essa, a coluna "só peças" sobe: a 1.000 lâminas/mês, ~97 h de VM2 em vez de 57 h (~+R$ 186/mês). A mistura de biópsias e peças segue desconhecida, e as biópsias endoscópicas reais devem ter menos patches que essas lâminas do TCGA (não medido).
+- **Visibility timeout:** o pior tempo medido (325 s, sem download nem envio) dá ~11 min no dobro, abaixo do piso de 30 min da seção 9.1. Ele é fixado no aceite, com a lâmina de 4,76 GiB do TCGA-CESC.
+- **Partida:** do `az vm start` ao SSH, 2 min 17 s (o `az` voltou em 2 min 16 s); do `docker run` ao modelo pronto, 5 a 6 s, com a imagem e os pesos ainda no cache, porque tinham acabado de ser copiados. A partida a frio, com o worker subindo no boot, é medida na fatia 9.
+- **Download do GDC:** ~3,2 a 3,4 MB/s por conexão (1,6 GB em 476 s). Para o padrão 20 (dados públicos processados direto da fonte, Fase 7), isso põe na VM2 ~3 a 4 min de download para cada lâmina de ~700 MB, sem paralelismo; conexões em paralelo não foram testadas.
+
+**Defeito achado pelo benchmark (`42fdfe3`).** A 1ª execução (imagem `a4b2d28`) parou na peça: "a pirâmide não tem nível baixo para a miniatura". Com mpp 0,2525, os 4 µm/px do QC 1 pedem 15,84×, um pouco abaixo do nível de 16× (4,04 µm/px, 33 MP). O `get_best_level_for_downsample` do OpenSlide devolvia o nível de 4× (535 MP), acima do teto, e o leitor recusava um SVS normal de 40× da Aperio como "formato não suportado". Na `acad5023`, o mesmo defeito passou calado: leu 180 MP e gastou 13,3 s na miniatura. A correção usa o nível mais grosso que não passa do alvo por mais de 5% ou, se nenhum couber no teto, o mais fino até 2 vezes o alvo (8 µm/px, o limite do QC 1 no plano), e tem teste de regressão com o caso real. O Pedro respondeu "Corrija e siga".
 
 ## Plano do Terraform: container dos pesos e papéis da VM1
 
@@ -75,14 +110,23 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 | `terraform fmt -check`; `validate`; `plan -out=fase4-modelos.tfplan`; `show -json` | formato ok; válido; 5 a criar, 0 a alterar, 0 a destruir; 64 `no-op` |
 | API do GDC (`/files`, TCGA-STAD, Diagnostic Slide, open) | 442 lâminas SVS; tamanho mínimo ~0, p10 35, mediana 686, p90 1.533 e máximo 2.685 MiB |
 
+| `az vm start`; leitura pelo SSH; `docker load`; `tar` dos pesos; `curl` do GDC (VM2, 17:42–18:11 UTC) | partida em 2 min 17 s até o SSH; T4, driver 595.71.05, 48 holds, Docker vazio; imagem com o mesmo ID da VM1; sha256 dos pesos igual na VM2; md5 das 4 lâminas `OK` |
+| `docker run --gpus all --network none … pathsol_worker.benchmark` (imagens `a4b2d28` e `42fdfe3`) | 1ª: rc=1 na 4ª lâmina (defeito acima); 2ª: rc=0 em 13 min 23 s, JSON em `docs/v3/04-benchmark-vm2.json` |
+| `az vm deallocate` (18:56:35–18:57:12 UTC); `az vm get-instance-view` | `PowerState/deallocated`; VM2 ligada 1 h 14 min (~R$ 5,80) |
+| `journalctl --list-boots` (VM2) | o boot anterior ao de 30/10 foi de 29/10, 15:01:32 a 15:01:38 (6 s), depois de um que terminou às 15:00:54. Responde à pendência da Fase 3: o deallocate interrompido pelo start desligou o SO, e o start gerou um boot de 6 s |
+
 ## O que não foi possível verificar
 
-- A vazão e o tempo por lâmina na VM2: saem do benchmark.
-- O tempo de download do Blob para a VM2: o benchmark baixa do GDC, e o caminho real (`wsi-publico`) só é medido no aceite (fatia 11).
+- O tempo de download do Blob para a VM2 e o de envio do `.h5`: o benchmark baixou do GDC. O caminho real (`wsi-publico` e `slide-h5`) é medido no aceite (fatia 11).
+- A partida a frio do worker (boot até o modelo pronto, com o disco frio): medida na fatia 9.
+- O tamanho de biópsias endoscópicas reais em patches: as lâminas do papel de biópsia são do TCGA, de peças cirúrgicas.
+- Se o `/mnt/pathsol-bench` vazio saiu com a desalocação: o `rm -r` apagou o conteúdo, mas não o diretório, porque o `/mnt` é do root (o Pedro mandou seguir sem o `rmdir`). A próxima partida da VM2 confere.
 
 ## Riscos
 
-- **Imagem grande:** 9,47 GB a cada `docker save | docker load` na VM2 (`/data` de 64 GB, com o teto de 2 imagens).
+- **Imagem grande:** 9,47 GB a cada `docker save | docker load` na VM2 (~1,5 a 2,5 min; `/data` de 64 GB, com o teto de 2 imagens).
+- **Peças grandes custam mais que o previsto:** uma peça do TCGA levou 5,4 min de extração, contra ~3 min no pior caso do plano. A 6.000 lâminas/mês só de peças, a VM2 passaria das ~430 h do gatilho de reserva (padrão 7).
+- **Dados públicos lentos na fonte:** ~3,3 MB/s por conexão no GDC, a partir da VM2.
 
 ## Decisões pedidas ao Pedro
 
