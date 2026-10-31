@@ -1,6 +1,6 @@
 # Fase 4 — Worker GPU e acervo `.h5`
 
-Relatório parcial. A fase começou em 30/10/2026 (~16:15 UTC), na sessão 1, depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e a lâmina em branco. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/`.
+Relatório parcial, no fim da sessão 1. A fase começou em 30/10/2026 (~16:15 UTC), depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão 1 terminou em 31/10, perto de 01:15 UTC, com tudo publicado. A próxima começa depois do apply do Pedro (seção "Próxima sessão"). O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e a lâmina em branco. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/`.
 
 ## Situação por fatia
 
@@ -8,9 +8,18 @@ Relatório parcial. A fase começou em 30/10/2026 (~16:15 UTC), na sessão 1, de
 |---|---|
 | Skill `pathsol-contrato-h5` com a decisão 5 | feita (`643baf8`): diff mostrado ao Pedro antes do código e aprovado, com os 7 pontos de fora do texto da decisão 5 |
 | 1. Benchmark na VM2 | feita (30/10, 17:42–18:57 UTC): 4 lâminas TCGA-STAD, fp16 e fp32, CPU, tempo por lâmina e partida (a frio, na fatia 9). O benchmark achou um defeito na escolha do nível da miniatura, corrigido em `42fdfe3`. Resultado abaixo e em `docs/v3/04-benchmark-vm2.json` |
-| 2. Pesos do Hibou-L | feita na VM1: o Pedro baixou a revisão fixada pelo terminal dele (17:21 UTC), com o script de `ed28b16`; hashes e licença conferidos; código lido antes de rodar; atenção fixada em eager. Faltam a cópia no container `modelos` (depois do apply) e a cópia na VM2 (com o benchmark) |
+| 2. Pesos do Hibou-L | feita na VM1: o Pedro baixou a revisão fixada pelo terminal dele (17:21 UTC), com o script de `ed28b16`; hashes e licença conferidos; código lido antes de rodar; atenção fixada em eager. A cópia na VM2 foi feita com o benchmark, com sha256 conferido lá. Falta a do container `modelos`, depois do apply (script em `56e41aa`) |
 | 3. Esquema mínimo com RLS forçada | feita (`9a19fee`, aplicada às 19:34 UTC com autorização): base `pathsol` vazia, com `tenants`, `slides` e `jobs`, estados e motivos da decisão 5; 16 testes num PostgreSQL 18.6 temporário |
-| 4 a 11 | não começadas |
+| 4. Produtor de jobs de teste | código e migração 0002 (`f20c6c6`), aplicados às 19:44 UTC com autorização, com o tenant `publico`. Nenhuma mensagem enviada: o envio espera o papel `vm1-fila-envio` (apply) |
+| 5. Consumidor idempotente | núcleo (`912dfd7`) e laço do worker (`05df91d`), com testes de unidade e de banco. A conexão de verdade espera a senha no cofre (script em `56e41aa`, depois do apply) e o papel da VM2 no segredo (próximo plano) |
+| 6. QC 1, tiling, QC 2 e foco | código e testes com lâminas sintéticas (`5de21d8`); limiares provisórios, calibrados no aceite |
+| 7. Extração e `.h5` pelo `job_id` | código e testes (`22843e1`); um job inteiro com os pesos reais rodou na CPU da VM1. A validação fp16 × fp32 com o código final fica para o primeiro `.h5` na VM2 |
+| 8. Retry, dead-letter e alarme | no consumidor (`912dfd7`), com testes de unidade; com a fila real, depois do apply. O alarme da dead-letter é o da Fase 3 |
+| 9. Liga e desliga | só o laço que para depois de 10 min sem job (`05df91d`); o resto não começou |
+| 10. Desidentificação | script do operador (`313d1a3`, `b1cafdb`), testado em SVS sintéticas e na CMU-1.svs (`301cd9c`). A exportação do Motic não chegou |
+| 11. Lâminas de aceite e testes | não começada |
+
+As fatias 6 a 10 avançaram no código antes de a 4 e a 5 rodarem com a fila e o banco reais, porque isso depende do apply. Cada uma terminou com testes passando, commit e push.
 
 ## Decisões do Pedro (30/10)
 
@@ -72,6 +81,16 @@ O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
 - **Testes** (16, num PostgreSQL 18.6-1.pgdg13+2 temporário dentro da imagem de teste, a mesma versão da produção, sem rede): os testes 2 e 3 de isolamento da skill no nível do banco (gravar em outro tenant é recusado; sem tenant, zero linhas), RLS forçada, papéis sem posse, as restrições acima e o caminho da restauração mensal (dump, `globais.sql` e `pg_restore --create --exit-on-error`, com RLS e dono preservados). Cinco defeitos aplicados de propósito na migração foram pegos, cada um pelo teste esperado. Um deles revelou que os testes travavam em vez de falhar; ganharam `lock_timeout` e conexão própria por subteste.
 - **Backup:** a base nova entra sozinha no `pg_dump` diário (o `pathsol_banco.py` lista toda base que aceita conexão), e os papéis vão no `globais.sql`.
 
+## Fatias 4 a 10: o que ficou pronto
+
+- **Produtor de jobs de teste (fatia 4, decisão 7):** `deploy/vm1/produtor/pathsol_produtor.py`, só na VM1, rodado pelo operador, sem porta de rede. Ele cria tenant, lâmina e job com `SET LOCAL ROLE pathsol_produtor` e monta a mensagem com os valores gravados no banco, que vai para a fila depois do commit, com a identidade da VM1. A migração 0002 dá ao produtor a leitura de `slides`. Às 19:44 UTC, com autorização, o banco foi para a revisão 0002 e ganhou o tenant `publico`. Sai na Fase 5.
+- **Consumidor (fatias 5 e 8):** cada campo da mensagem é validado (UUIDs; blob `wsi-<slug>/<uuid da lâmina>.<ext>`; órgão; material; versão do pipeline; tentativa). O job é procurado sob o tenant da mensagem, com RLS. Se não existir ou não bater com a lâmina, inclusive no órgão e no material, a mensagem vai para a dead-letter sem processar: é o teste da mensagem forjada, por enquanto no nível da unidade. Um job já terminado só tem a mensagem apagada. Numa falha técnica, a tentativa sobe no banco e a mensagem volta depois de 60 s e de 120 s; na 3ª falha vai para a dead-letter, e o job, para DEAD_LETTER. Toda mudança de estado exige RUNNING, e a entrega duplicada não termina o job duas vezes.
+- **QC e grade (fatia 6):** o QC 1 roda na miniatura de 4 µm/px (vidro vazio abaixo de 0,02 mm²; material insuficiente abaixo de 0,1 mm² na biópsia e de 0,5 mm² na peça; na citologia, só vidro vazio). Depois vêm a grade de 224 px a 0,5 µm/px, o piso de 10% de tecido, o QC 2 por patch e a regra de foco: bloqueia acima de 20% de patches fora de foco, só avisa abaixo de 150 patches e nunca bloqueia citologia. Tudo antes da GPU.
+- **`.h5` (fatia 7):** nome `<tenant>/<lâmina>/<12 hex do extractor_version>/<job_id>.h5` no `slide-h5`, embeddings em float32, attrs do contrato e versões na regressão (torch, transformers, CUDA, Pillow, driver, GPU). O arquivo é escrito no disco temporário e enviado em blocos com MD5, conferido por HEAD. A lâmina bloqueada por foco grava os escores em `<job_id>.qc.h5`.
+- **Laço do worker (parte da fatia 9):** `python -m pathsol_worker` esvazia o diretório de trabalho (teste 8), lê a senha do banco no cofre com a identidade da VM2, processa um job por vez e sai depois de 10 min sem job. Desalocação pela própria VM2, reconciliador, watchdog, unit e heartbeat ficam para a fatia 9.
+- **Desidentificação (fatia 10):** `deploy/vm1/aceite/desidentificar.py` trabalha numa cópia. Etiqueta, macro e qualquer imagem fora da pirâmide saem da cadeia do TIFF, com os bytes zerados; a miniatura fica. A descrição mantém o cabeçalho, `AppMag` e `MPP`; as outras tags de texto são zeradas; os tiles ficam byte a byte. O `pathsol_enviar_lamina.py` dá um UUID à lâmina, desidentifica e envia ao `wsi-<tenant>` com SAS de delegação só de criação, só daquele blob e de 60 min. Depois confere tamanho e MD5 e registra a lâmina pelo produtor.
+- **CMU-1.svs (31/10, ~00:38 UTC, com autorização):** lâmina pública de pesquisa (CC0-1.0, dados de teste do OpenSlide), 177.552.579 bytes, sha256 igual ao publicado. Origem: 6 diretórios, 3 níveis, mpp 0,499, etiqueta, macro e miniatura, 20 campos Aperio. Cópia: 4 diretórios, os mesmos níveis, mpp e pixels (tiles e tags iguais, sha256 dos tiles igual), só a miniatura, só `AppMag` e `MPP`, e nenhum valor de Filename, User, ScanScope ID, Date ou Time nos bytes. Os bytes da etiqueta e da macro estão zerados, e a origem não mudou. A cópia ficou num diretório temporário, apagado no fim. Dois defeitos aplicados de propósito numa cópia do script (manter o `Filename`; não zerar a etiqueta e a macro) foram pegos, cada um pelo teste esperado. A CMU-1.svs fica no staging (`/data/staging/aceite`, teto de 20 GiB) para o envio ao `wsi-publico` depois do apply.
+
 ## Plano do Terraform: container dos pesos e papéis da VM1
 
 `terraform plan -out=fase4-modelos.tfplan` refeito em 30/10, ~19:50 UTC, com o papel do Key Vault pedido pelo Pedro (opção A, abaixo): **6 a criar, 0 a alterar, 0 a destruir.** No JSON do plano, 64 `no-op` e 6 `create`; nenhum recurso com dado, de VM, disco ou rede muda. sha256: `fb70baede0eeee4e6829b4831c18359656f97458ddabb797ece5f928c55f6fda`. O primeiro plano (~17:00 UTC, 5 a criar, `463d7f08…7caf`) foi substituído e não vale mais.
@@ -120,13 +139,16 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 | testes do worker (`--network none`, na imagem de teste) | 40 testes `OK` (2 pulados sem os pesos); três defeitos aplicados de propósito numa cópia (foco sem erosão, teto de mpp em 1,0, área não escaneada sem fundo branco) foram pegos, cada um pelo teste esperado |
 | `sha256sum`; `git hash-object`; `manifesto.json` (pesos baixados) | os 7 arquivos iguais à listagem da revisão e ao plano |
 | `test_modelo_real.py` com os pesos montados só para leitura, CPU da VM1, `--network none` | 2 testes `OK`: classe e 261 tokens; pixels iguais aos do processador oficial (tolerância de 1e-5) |
-| `terraform fmt -check`; `validate`; `plan -out=fase4-modelos.tfplan`; `show -json` | formato ok; válido; 5 a criar, 0 a alterar, 0 a destruir; 64 `no-op` |
+| `terraform fmt -check`; `validate`; `plan -out=fase4-modelos.tfplan`; `show -json` | formato ok; válido; 1º plano com 5 a criar; o refeito (~19:50 UTC), com 6 a criar, 0 a alterar, 0 a destruir e 64 `no-op` |
 | API do GDC (`/files`, TCGA-STAD, Diagnostic Slide, open) | 442 lâminas SVS; tamanho mínimo ~0, p10 35, mediana 686, p90 1.533 e máximo 2.685 MiB |
-
 | `az vm start`; leitura pelo SSH; `docker load`; `tar` dos pesos; `curl` do GDC (VM2, 17:42–18:11 UTC) | partida em 2 min 17 s até o SSH; T4, driver 595.71.05, 48 holds, Docker vazio; imagem com o mesmo ID da VM1; sha256 dos pesos igual na VM2; md5 das 4 lâminas `OK` |
 | `docker run --gpus all --network none … pathsol_worker.benchmark` (imagens `a4b2d28` e `42fdfe3`) | 1ª: rc=1 na 4ª lâmina (defeito acima); 2ª: rc=0 em 13 min 23 s, JSON em `docs/v3/04-benchmark-vm2.json` |
 | `az vm deallocate` (18:56:35–18:57:12 UTC); `az vm get-instance-view` | `PowerState/deallocated`; VM2 ligada 1 h 14 min (~R$ 5,80) |
 | `journalctl --list-boots` (VM2) | o boot anterior ao de 30/10 foi de 29/10, 15:01:32 a 15:01:38 (6 s), depois de um que terminou às 15:00:54. Responde à pendência da Fase 3: o deallocate interrompido pelo start desligou o SO, e o start gerou um boot de 6 s |
+| `docker exec … psql` (só leitura, 31/10 00:37) | revisão `0002`; tenant `publico`; 0 lâminas e 0 jobs; os 3 papéis sem LOGIN, superusuário ou BYPASSRLS |
+| `curl` da CMU-1.svs; `stat`; `sha256sum` (31/10 00:36–00:38) | 177.552.579 bytes e sha256 `00a3d544…80eb30`, iguais ao índice do OpenSlide (CC0-1.0) |
+| `test_desidentificar*.py` com a CMU-1.svs, `--network none`, origem só para leitura | 10 testes `OK`; com um defeito proposital em cada cópia do script, 1 falha cada, no teste esperado |
+| suítes no HEAD `301cd9c`, imagens de teste recriadas (31/10 00:40–00:42) | worker: 99 `OK` (4 pulados: pesos e banco); pesos reais na CPU: 3 `OK`; API: 17 `OK`; banco do worker: 8 `OK`; produtor com banco: 4 `OK`; senha no PostgreSQL: 1 `OK`; aceite na imagem do worker: 16 `OK` (5 pulados sem a SVS real); scripts no Python 3.12 do host: 67 `OK` (4 pulados) |
 
 ## O que não foi possível verificar
 
@@ -134,6 +156,9 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 - A partida a frio do worker (boot até o modelo pronto, com o disco frio): medida na fatia 9.
 - O tamanho de biópsias endoscópicas reais em patches: as lâminas do papel de biópsia são do TCGA, de peças cirúrgicas.
 - Se o `/mnt/pathsol-bench` vazio saiu com a desalocação: o `rm -r` apagou o conteúdo, mas não o diretório, porque o `/mnt` é do root (o Pedro mandou seguir sem o `rmdir`). A próxima partida da VM2 confere.
+- Tudo o que depende do apply: a mensagem do produtor na fila real, o worker lendo a senha no cofre e conectando ao banco, a SAS de delegação do script do operador contra o serviço e os pesos no container `modelos`. Até lá, esses caminhos só têm testes com o Azure simulado e, no banco, testes num PostgreSQL 18.6 temporário.
+- A validação fp16 × fp32 com o código final na T4: o benchmark mediu com o mesmo extrator, mas o primeiro `.h5` do acervo ainda não existe.
+- A desidentificação numa SVS que não seja da Aperio: a exportação do Motic não chegou, e o script recusa o que não começa com o cabeçalho da Aperio.
 
 ## Riscos
 
@@ -143,4 +168,15 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 
 ## Decisões pedidas ao Pedro
 
-- Aplicar o `fase4-modelos.tfplan` (sha256 acima) como última ação de uma sessão.
+- Aplicar o `fase4-modelos.tfplan` (sha256 `fb70baed…5f6fda`) pelo SSH, com o Antigravity fechado, e fazer `az logout` no fim.
+
+## Próxima sessão
+
+Em ordem, cada passo com a autorização que ele pede:
+1. Conferir o apply: os 6 recursos e os alertas esperados dele (`pathsol-role-assignment-v3` 4 vezes; `pathsol-storage-write-v3`, talvez).
+2. Conferências da Fase 3 que dependem do relógio, depois de 31/10, 02:02 UTC.
+3. Com o token do IMDS da VM1, script por script: `enviar_modelo.py` (pesos no `modelos`) e `pathsol_senha_worker.py` (senha no cofre e LOGIN do `pathsol_worker`).
+4. Plano do Terraform com o `Key Vault Secrets User` da VM2 só no segredo `banco-worker`, e o apply dele.
+5. Envio da CMU-1.svs ao `wsi-publico` pelo script do operador: prova a SAS de delegação de verdade.
+6. Fatia 9 (desalocação pela própria VM2, reconciliador, watchdog, unit, heartbeat) e fatia 11: testes 1 a 5, 8 e 9, PNG do teste 6, visibility timeout, teste 3 de isolamento, mensagem forjada e prova do liga e desliga.
+7. Com autorização, remover da VM1 as imagens antigas (`pathsol-worker:deps`, `a4b2d28`, `pathsol-api` de commits velhos). O `/data` está em 25%.
