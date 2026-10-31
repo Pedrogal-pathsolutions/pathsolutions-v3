@@ -107,7 +107,7 @@ O que isso diz, com n = 4 lâminas de uma só fonte (sinal, não validação):
 
 Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `containers/*` de plano de controle, e o `Storage Blob Delegator` só pede a chave de delegação.
 
-**Senha do worker (fatia 5), decisão do Pedro de 30/10: opção A, Key Vault.** O script do operador gera a senha na VM1, faz o `ALTER ROLE pathsol_worker LOGIN PASSWORD` e grava o segredo no `pathsol-kv-v3` com a identidade da VM1 (token do IMDS só nesse script, com autorização). O worker lê pela identidade da VM2. A opção B (arquivo do root na VM2, sem Terraform) ficou de fora por contrariar o "segredos no Key Vault" da skill `pathsol-infra`. Consequência: o worker só conecta de verdade na sessão seguinte ao 2º apply. No apply, o `pathsol-role-assignment-v3` dispara 4 vezes e o `pathsol-storage-write-v3` pode disparar pelo container novo; são do apply, não incidente. O apply é do Pedro, pelo SSH, com o Antigravity fechado.
+**Senha do worker (fatia 5), decisão do Pedro de 30/10: opção A, Key Vault.** O script do operador gera a senha na VM1, faz o `ALTER ROLE pathsol_worker LOGIN PASSWORD` e grava o segredo no `pathsol-kv-v3` com a identidade da VM1 (token do IMDS só nesse script, com autorização). O worker lê pela identidade da VM2. A opção B (arquivo do root na VM2, sem Terraform) ficou de fora por contrariar o "segredos no Key Vault" da skill `pathsol-infra`. Consequência: o worker só conecta de verdade na sessão seguinte ao 2º apply. No apply, o `pathsol-role-assignment-v3`, que cobre a subscrição inteira (`alertas.tf`), deve disparar uma vez por papel: 5 no plano refeito. O `pathsol-storage-write-v3` pode disparar pelo container novo. São do apply, não incidente. O apply é do Pedro, pelo SSH, com o Antigravity fechado.
 
 ## Escolhas desta fase, fora do texto do plano
 
@@ -173,7 +173,7 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 ## Próxima sessão
 
 Em ordem, cada passo com a autorização que ele pede:
-1. Conferir o apply: os 6 recursos e os alertas esperados dele (`pathsol-role-assignment-v3` 4 vezes; `pathsol-storage-write-v3`, talvez).
+1. Conferir o apply: os 6 recursos e os alertas esperados dele (`pathsol-role-assignment-v3` uma vez por papel, 5 no total; `pathsol-storage-write-v3`, talvez).
 2. Conferências da Fase 3 que dependem do relógio, depois de 31/10, 02:02 UTC.
 3. Com o token do IMDS da VM1, script por script: `enviar_modelo.py` (pesos no `modelos`) e `pathsol_senha_worker.py` (senha no cofre e LOGIN do `pathsol_worker`).
 4. Plano do Terraform com o `Key Vault Secrets User` da VM2 só no segredo `banco-worker`, e o apply dele.
