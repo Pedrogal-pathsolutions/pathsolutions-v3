@@ -52,6 +52,11 @@ class JobStore:
     def close(self):
         self.conn.close()
 
+    def beat(self):
+        """The heartbeat the reconciler reads (plan 8.3, layer 3), in a table with no tenant data."""
+        self.conn.execute("insert into worker_heartbeat (worker, beat_at) values ('vm2', now()) "
+                          "on conflict (worker) do update set beat_at = excluded.beat_at")
+
     @contextlib.contextmanager
     def _tenant(self, tenant_id):
         with self.conn.transaction():

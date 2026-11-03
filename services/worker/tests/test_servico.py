@@ -6,7 +6,7 @@ import tempfile
 import time
 import unittest
 
-from pathsol_worker import fila, servico
+from pathsol_worker import banco, fila, servico
 
 
 class Response(io.BytesIO):
@@ -86,9 +86,23 @@ class Loop(unittest.TestCase):
         clock = Clock()
         jobs = Jobs(["a"])
         beats = []
+        database = []
         servico.run(jobs, None, None, None, visibility=1800, idle=600, pulse=lambda: beats.append(clock.now),
-                    clock=clock, sleep=clock.sleep, handle=lambda *_: "COMPLETED")
+                    heartbeat=lambda: database.append(clock.now), clock=clock, sleep=clock.sleep,
+                    handle=lambda *_: "COMPLETED")
         self.assertEqual(len(beats), len(jobs.timeouts))
+        self.assertEqual(database, beats)
+
+    def test_a_database_heartbeat_failure_does_not_stop_the_worker(self):
+        clock = Clock()
+
+        def heartbeat():
+            raise banco.psycopg.OperationalError("banco fora do ar")
+
+        with self.assertLogs("pathsol_worker", "WARNING"):
+            servico.run(Jobs([]), None, None, None, visibility=1800, idle=600, heartbeat=heartbeat,
+                        clock=clock, sleep=clock.sleep)
+        self.assertGreaterEqual(clock.now, 600)
 
     def test_takes_no_job_when_it_could_pass_vm1_shutdown(self):
         clock = Clock()

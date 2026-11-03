@@ -57,6 +57,16 @@ class Store(unittest.TestCase):
     def row(self, message):
         return self.db.execute("select status, reason, attempt, h5_blob from jobs where id = %s", (message.job_id,)).fetchone()
 
+    def test_beat_keeps_one_fresh_row_that_the_reconciler_reads(self):
+        self.store.beat()
+        first = self.db.execute("select beat_at from worker_heartbeat where worker = 'vm2'").fetchone()[0]
+        self.store.beat()
+        rows = self.db.execute("select worker, beat_at from worker_heartbeat").fetchall()
+        self.assertEqual(len(rows), 1)
+        self.assertGreater(rows[0][1], first)
+        age = self.db.execute("select extract(epoch from now() - max(beat_at))::bigint from worker_heartbeat").fetchone()[0]
+        self.assertLess(age, 5)
+
     def test_claim_runs_the_job_with_the_database_values(self):
         message = self.new_job()
         job = self.store.claim(message)

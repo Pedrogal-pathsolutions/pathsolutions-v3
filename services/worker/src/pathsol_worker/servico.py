@@ -25,6 +25,8 @@ import threading
 import time
 from urllib.request import Request, urlopen
 
+import psycopg
+
 from pathsol_worker import banco, blob, consumidor, energia, extractor, fila, identidade, processo, versao
 
 VAULT = "https://vault.azure.net"
@@ -76,11 +78,16 @@ def beating(pulse, limit, every=PULSE):
         thread.join()
 
 
-def run(jobs, dead_letter, store, processor, visibility, idle, pulse=lambda: None, accepting=lambda: True,
-        clock=time.monotonic, sleep=time.sleep, handle=consumidor.handle):
+def run(jobs, dead_letter, store, processor, visibility, idle, pulse=lambda: None, heartbeat=lambda: None,
+        accepting=lambda: True, clock=time.monotonic, sleep=time.sleep, handle=consumidor.handle):
+    """`pulse` may run in another thread during a job; `heartbeat` uses the job store's connection, so only here."""
     last = clock()
     while True:
         pulse()
+        try:
+            heartbeat()
+        except psycopg.Error as error:
+            log.warning("heartbeat no banco: %s", error)
         received = jobs.get(visibility) if accepting() else None
         if received is None:
             if clock() - last >= idle:
@@ -128,7 +135,8 @@ def main():
         run(fila.Queue(fila.JOBS), fila.Queue(fila.DEAD_LETTER), store,
             processo.Processor(blob.Blob(), hibou, version, versao.software(), workroot),
             visibility=int(env.get("PATHSOL_VISIBILIDADE", 1800)), idle=int(env.get("PATHSOL_OCIOSO", 600)),
-            pulse=pulse, accepting=lambda: energia.accepting(datetime.datetime.now(datetime.UTC), worst, shutdown))
+            pulse=pulse, heartbeat=store.beat,
+            accepting=lambda: energia.accepting(datetime.datetime.now(datetime.UTC), worst, shutdown))
     finally:
         store.close()
     leave(env.get("PATHSOL_MANUTENCAO", "/etc/pathsol/manutencao"), datetime.datetime.now(datetime.UTC))
