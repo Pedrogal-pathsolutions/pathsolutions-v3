@@ -102,6 +102,7 @@ resource "azurerm_role_definition" "backup_banco" {
 data "azurerm_role_definition" "builtin" {
   for_each = toset([
     "Key Vault Secrets Officer",
+    "Key Vault Secrets User",
     "Storage Blob Data Owner",
     "Storage Blob Data Reader",
     "Storage Blob Delegator",
@@ -174,6 +175,13 @@ locals {
         scope     = azurerm_key_vault.v3.id
         role_id   = data.azurerm_role_definition.builtin["Key Vault Secrets Officer"].id
         principal = local.vm1_principal_id
+      }
+      # The worker reads its database password from that secret, and from no
+      # other one in the vault.
+      vm2-kv-banco-worker = {
+        scope     = "${azurerm_key_vault.v3.id}/secrets/banco-worker"
+        role_id   = data.azurerm_role_definition.builtin["Key Vault Secrets User"].id
+        principal = azurerm_user_assigned_identity.vm2.principal_id
       }
       vm2-autodesalocar = {
         scope     = data.azurerm_virtual_machine.vm2.id
