@@ -351,8 +351,15 @@ class Deallocate(ReconcilerTest):
         self.assertEqual(azure.posts(), [])
         self.assertEqual(lines, [])
 
-    def test_only_running_vm2_is_deallocated_and_an_idle_pass_is_silent(self):
-        for power in ("deallocated", "stopped", "starting", "stopping", "deallocating"):
+    def test_stopped_vm2_keeps_billing_and_is_deallocated(self):
+        azure = Azure(power="stopped")
+        ok, lines = self.reconcile(azure, Database("\n"))
+        self.assertTrue(ok)
+        self.assertEqual(azure.posts(), [DEALLOCATE])
+        self.assertEqual(failures(lines), [])
+
+    def test_only_running_or_stopped_vm2_is_deallocated_and_an_idle_pass_is_silent(self):
+        for power in ("deallocated", "starting", "stopping", "deallocating"):
             with self.subTest(power=power):
                 azure = Azure(power=power)
                 ok, lines = self.reconcile(azure, Database("\n"))

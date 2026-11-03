@@ -9,6 +9,9 @@ After=docker.service pathsol-banco.service
 [Service]
 Type=oneshot
 ExecStart=/usr/local/sbin/pathsol-reconciliador
+# A oneshot has no start timeout, and a hung pass would hold back the next
+# ones. Every call has its own timeout; together they end in under 2 min.
+TimeoutStartSec=3min
 # Construction values: start on the first job, 900 s in production (pattern
 # 10). The worst job time is provisional until the acceptance tests. 02:00 UTC
 # is VM1's auto-shutdown, 23:00 in Brasilia.

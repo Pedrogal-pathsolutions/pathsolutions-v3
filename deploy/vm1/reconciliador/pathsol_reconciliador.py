@@ -7,8 +7,9 @@ every 30 s while VM1 is on, and each pass decides at most one action:
               waited PATHSOL_ESPERA_PARTIDA (pattern 10); and VM2, ready in
               300 s, would finish the worst measured job, PATHSOL_PIOR_JOB,
               before VM1's next auto-shutdown, PATHSOL_DESLIGA_VM1 (plan 7)
-  deallocate  layer 3 of plan 8.3: no job visible, VM2 running for longer
-              than the visibility timeout, PATHSOL_VISIBILIDADE, and the
+  deallocate  layer 3 of plan 8.3: no job visible, VM2 running (or stopped
+              from its OS) for longer than the visibility timeout,
+              PATHSOL_VISIBILIDADE, since its last start, and the
               worker's heartbeat older than it, even with a job RUNNING in
               the database: its message comes back after the timeout
 A valid maintenance marker holds both: /etc/pathsol/manutencao-vm2, one line
@@ -59,6 +60,8 @@ WORKER_READY = 300  # seconds from the start until the worker takes jobs
 # Never during a transition: a start sent while VM2 was deallocating was
 # accepted and won (Phase 3, slice 8).
 START_FROM = ("deallocated", "stopped")
+# A VM stopped from its OS keeps billing (plan 8.1).
+DEALLOCATE_FROM = ("running", "stopped")
 # On 30/10 the platform reached VM1's guest at 02:02:03 for a 02:00 shutdown;
 # until then the timer keeps running and must not take tomorrow's shutdown as
 # the next one.
@@ -220,12 +223,12 @@ def reconcile(now, uptime, env, marker, opener, run):
                 else:
                     log(True, f"partida da VM2 adiada: {WORKER_READY} s até o worker pronto e {worst_job} s do pior job "
                               f"passam do desligamento da VM1 em {utc_text(shutdown)}")
-        elif power == "running" and since is not None and (now - since).total_seconds() > visibility:
+        elif power in DEALLOCATE_FROM and since is not None and (now - since).total_seconds() > visibility:
             beat = step("heartbeat do worker, desalocação adiada", heartbeat_age, run)
             if beat is None or beat > visibility:
                 status = step("deallocate da VM2", vm2_action, "deallocate", arm_token, opener)
                 heartbeat = "nenhum heartbeat" if beat is None else f"heartbeat de {beat} s"
-                log(True, f"deallocate da VM2 pedido (HTTP {status}): nenhum job visível, ligada desde "
+                log(True, f"deallocate da VM2 pedido (HTTP {status}): nenhum job visível, {power} desde "
                           f"{utc_text(since)} e {heartbeat}")
     except Exception as error:  # every failure must reach syslog
         log(False, describe(error))
