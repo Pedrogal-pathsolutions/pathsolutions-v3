@@ -1,0 +1,11 @@
+# Plan 8.3: the queue every 30 s, from a minute after boot.
+[Unit]
+Description=PathSolutions v3 reconciliador da VM2
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=30s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

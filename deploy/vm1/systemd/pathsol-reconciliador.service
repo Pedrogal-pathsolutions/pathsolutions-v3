@@ -1,0 +1,18 @@
+# Plan 8.3: one pass of the VM2 reconciler (start for a job; layer 3 of the
+# deallocation). Root, for docker exec into the database container, which
+# holds the worker's heartbeat. Ordered after docker and the database without
+# pulling them in: a pass without them logs FALHA.
+[Unit]
+Description=PathSolutions v3 reconciliador da VM2
+After=docker.service pathsol-banco.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pathsol-reconciliador
+# Construction values: start on the first job, 900 s in production (pattern
+# 10). The worst job time is provisional until the acceptance tests. 02:00 UTC
+# is VM1's auto-shutdown, 23:00 in Brasilia.
+Environment=PATHSOL_ESPERA_PARTIDA=0
+Environment=PATHSOL_PIOR_JOB=900
+Environment=PATHSOL_VISIBILIDADE=1800
+Environment=PATHSOL_DESLIGA_VM1=02:00
