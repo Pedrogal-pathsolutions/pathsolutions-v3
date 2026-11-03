@@ -1,0 +1,12 @@
+# Plan 8.3, layer 2: deallocates VM2 through ARM when the GPU fails at start
+# or the worker's heartbeat stops, with or without VM1. One pass, then exit.
+[Unit]
+Description=PathSolutions v3 watchdog da VM2
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/pathsol-watchdog
+# A oneshot has no start timeout by default, and a hung pass would hold back
+# every later one. The slowest normal pass (nvidia-smi 60 s, IMDS 10 s, ARM
+# 30 s) ends in under 2 min.
+TimeoutStartSec=3min

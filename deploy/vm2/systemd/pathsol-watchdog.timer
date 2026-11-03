@@ -1,0 +1,12 @@
+# Plan 8.3: the first pass 5 min after boot, once boot and model load are
+# over, then one a minute.
+[Unit]
+Description=PathSolutions v3 watchdog da VM2
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=1min
+AccuracySec=5s
+
+[Install]
+WantedBy=timers.target
