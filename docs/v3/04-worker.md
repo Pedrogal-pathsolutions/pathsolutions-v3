@@ -1,6 +1,6 @@
 # Fase 4 — Worker GPU e acervo `.h5`
 
-Relatório parcial, no fim da sessão 2. A fase começou em 30/10/2026 (~16:15 UTC), depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão 1 terminou em 31/10, às 00:46 UTC; a sessão 2 foi em 03/11, das 12:51 às ~14:05 UTC. A próxima começa depois do apply do `fase4-kv-worker.tfplan` (seção "Próxima sessão"). O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e a lâmina em branco. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/` (sessão 2: `2026-11-03-fase4-sessao2.md`).
+Relatório parcial, no fim da sessão 2. A fase começou em 30/10/2026 (~16:15 UTC), depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão 1 terminou em 31/10, às 00:46 UTC; a sessão 2 foi em 03/11, das 12:51 às ~14:00 UTC. A próxima começa depois do apply do `fase4-kv-worker.tfplan` (seção "Próxima sessão"). O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e a lâmina em branco. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/` (sessão 2: `2026-11-03-fase4-sessao2.md`).
 
 ## Situação por fatia
 
