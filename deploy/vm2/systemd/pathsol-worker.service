@@ -13,12 +13,11 @@ RequiresMountsFor=/data /mnt
 # The temporary disk comes back empty at every start; the image runs as 5433.
 ExecStartPre=/usr/bin/install -d -o 5433 -g 5433 -m 0700 /mnt/pathsol-trabalho
 ExecStartPre=/usr/bin/install -d -o 5433 -g 5433 -m 0755 /var/lib/pathsol
-# --init: as PID 1, Python would ignore the SIGTERM of docker stop. The logs go
-# to the host journal, capped by journald, and outlive the container.
-# /etc/pathsol holds the maintenance marker and the database certificate,
-# pinned by verify-full (plan 7).
+# --init: as PID 1, Python would ignore the SIGTERM of docker stop. The
+# container's output reaches the host journal through docker run, capped by
+# journald, and outlives the container. /etc/pathsol holds the maintenance
+# marker and the database certificate, pinned by verify-full (plan 7).
 ExecStart=/usr/bin/docker run --rm --pull never --init --name pathsol-worker --gpus all \
-    --log-driver journald --log-opt tag=pathsol-worker \
     -v /data/modelos/hibou-L/31a3b9fee16554c8552cb643d311733bce8faf7c:/modelo:ro \
     -v /mnt/pathsol-trabalho:/trabalho \
     -v /var/lib/pathsol:/var/lib/pathsol \
@@ -34,6 +33,9 @@ ExecStart=/usr/bin/docker run --rm --pull never --init --name pathsol-worker --g
     -e PATHSOL_MANUTENCAO=/etc/pathsol/manutencao \
     pathsol-worker:bfbd7d4 pathsol_worker
 ExecStop=/usr/bin/docker stop --timeout 30 pathsol-worker
+# docker stop ends the worker by SIGTERM, which docker run returns as 143.
+SuccessExitStatus=143
+SyslogIdentifier=pathsol-worker
 Restart=no
 
 [Install]
