@@ -1,7 +1,7 @@
 # Plan 8.3: one pass of the VM2 reconciler (start for a job; layer 3 of the
 # deallocation). Root, for docker exec into the database container, which
-# holds the worker's heartbeat. Ordered after docker and the database without
-# pulling them in: a pass without them logs FALHA.
+# holds the worker's heartbeat and its last job end. Ordered after docker and
+# the database without pulling them in: a pass without them logs FALHA.
 [Unit]
 Description=PathSolutions v3 reconciliador da VM2
 After=docker.service pathsol-banco.service
@@ -10,8 +10,17 @@ After=docker.service pathsol-banco.service
 Type=oneshot
 ExecStart=/usr/local/sbin/pathsol-reconciliador
 # A oneshot has no start timeout, and a hung pass would hold back the next
-# ones. Every call has its own timeout; together they end in under 2 min.
+# ones. Every call has its own timeout; on the longest pass, start or
+# deallocate, they add up to 140 s.
 TimeoutStartSec=3min
+# Start limit (Pedro, 06/11): each start goes to
+# /var/lib/pathsol-reconciliador/partidas, which keeps only the starts after
+# the last job that reached a terminal state, 3 at most. With 3, VM2 is not
+# started, and every pass that would start it logs FALHA. To unblock, fix the
+# cause and start VM2 by hand, with the maintenance markers of both hosts
+# while debugging: the first job that reaches a terminal state resets the
+# count. Removing the file resets it too.
+StateDirectory=pathsol-reconciliador
 # Construction values: start on the first job, 900 s in production (pattern
 # 10). The worst job time is provisional until the acceptance tests. 02:00 UTC
 # is VM1's auto-shutdown, 23:00 in Brasilia.

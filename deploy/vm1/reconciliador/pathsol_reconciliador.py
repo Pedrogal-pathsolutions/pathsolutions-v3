@@ -4,9 +4,10 @@
 Installed as /usr/local/sbin/pathsol-reconciliador; its timer runs one pass
 every 30 s while VM1 is on, and each pass decides at most one action:
   start       a job is visible; VM2 is deallocated or stopped; the oldest job
-              waited PATHSOL_ESPERA_PARTIDA (pattern 10); and VM2, ready in
+              waited PATHSOL_ESPERA_PARTIDA (pattern 10); VM2, ready in
               300 s, would finish the worst measured job, PATHSOL_PIOR_JOB,
-              before VM1's next auto-shutdown, PATHSOL_DESLIGA_VM1 (plan 7)
+              before VM1's next auto-shutdown, PATHSOL_DESLIGA_VM1 (plan 7);
+              and the start limit below allows it
   deallocate  layer 3 of plan 8.3: no job visible, VM2 running (or stopped
               from its OS) for longer than the visibility timeout,
               PATHSOL_VISIBILIDADE, since its last start, and the
@@ -16,6 +17,19 @@ A valid maintenance marker holds both: /etc/pathsol/manutencao-vm2, one line
 with a UTC deadline (YYYY-MM-DDTHH:MM:SSZ) at most 4 h after the file was
 written. The age of the oldest visible job is logged on every pass that sees
 one, for the alarm of plan 9.4.
+
+Start limit (Pedro, 06/11). A worker broken at boot (no password, no GPU,
+wrong image) finishes no job, the watchdog deallocates VM2, and the job left
+in the queue would have VM2 started again and again. So every start ARM
+accepts is recorded in /var/lib/pathsol-reconciliador/partidas, one UTC time
+per line, and the record keeps only the starts after the last job end, when
+a job last reached a terminal state (worker_heartbeat.finished_at, written
+by the worker with the job's final state). With 3 of them there is no start,
+and every pass that would start VM2 logs FALHA. To unblock, fix the cause and
+start VM2 by hand, with the maintenance markers of both hosts while
+debugging: the first job that reaches a terminal state resets the count.
+Removing the record also resets it. A record that cannot be read holds the
+start too, with a FALHA that names the file to fix or remove.
 
 Lines go to syslog local0 as "OK ..." or, with priority err, "FALHA ...",
 and none when there is nothing to do; the exit code is 1 after any FALHA.
@@ -43,12 +57,15 @@ IMDS_TOKEN_URL = "http://169.254.169.254/metadata/identity/oauth2/token?api-vers
 ARM = "https://management.azure.com/"
 STORAGE = "https://storage.azure.com/"
 X_MS_VERSION = "2024-11-04"
-HEARTBEAT_AGE = [
-    "docker", "exec", "-u", "postgres", "pathsol-banco", "psql", "-X", "-At", "-d", "pathsol",
-    "-c", "select extract(epoch from now() - max(beat_at))::bigint from worker_heartbeat",
+WORKER_HEARTBEAT = [
+    "docker", "exec", "-u", "postgres", "pathsol-banco", "psql", "-X", "-At", "-d", "pathsol", "-c",
+    "select extract(epoch from now() - max(beat_at))::bigint, extract(epoch from max(finished_at))::bigint"
+    " from worker_heartbeat",
 ]
 MARKER = "/etc/pathsol/manutencao-vm2"
 MARKER_MAX_HOURS = 4  # plan 8.3: maintenance has a maximum term
+STARTS = "/var/lib/pathsol-reconciliador/partidas"
+START_LIMIT = 3  # Pedro, 06/11: starts in a row without any job reaching a terminal state
 
 # Defaults of the unit's environment; durations in seconds.
 VISIBILITY = 1800  # visibility timeout, at least 30 min (plan 9.1)
@@ -137,6 +154,31 @@ def read_marker(path, now):
     return deadline, None
 
 
+def read_starts(path):
+    """The starts of VM2 recorded in `path`; none without the file."""
+    try:
+        with open(path, encoding="utf-8") as file:
+            lines = file.read().splitlines()
+        return [datetime.datetime.strptime(line, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC) for line in lines]
+    except FileNotFoundError:
+        return []
+    except ValueError as error:  # UnicodeDecodeError is a ValueError
+        raise ValueError(f"{path} fora do formato, uma partida AAAA-MM-DDTHH:MM:SSZ por linha; "
+                         "corrija ou apague o arquivo") from error
+
+
+def write_starts(path, starts):
+    """A new file, on disk before it is renamed over the record: a pass cut
+    short, or VM1 going down, leaves the old record or the new one, never
+    part of one."""
+    partial = path + ".parcial"
+    with open(partial, "w", encoding="utf-8") as file:
+        file.writelines(f"{utc_text(start)}\n" for start in starts)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(partial, path)
+
+
 def token(resource, opener):
     with opener(Request(IMDS_TOKEN_URL + resource, headers={"Metadata": "true"}), timeout=10) as response:
         return json.load(response)["access_token"]
@@ -180,10 +222,12 @@ def run(args):
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=30)
 
 
-def heartbeat_age(run):
-    """Seconds since the worker's last beat; None if it never beat."""
-    out = run(HEARTBEAT_AGE).stdout.strip()
-    return int(out) if out else None
+def worker_heartbeat(run):
+    """Seconds since the worker's last beat, and when a job last reached a
+    terminal state; None for what the table does not hold yet."""
+    beat, finished = run(WORKER_HEARTBEAT).stdout.strip().split("|")
+    return (int(beat) if beat else None,
+            datetime.datetime.fromtimestamp(int(finished), UTC) if finished else None)
 
 
 def next_shutdown(now, at):
@@ -194,7 +238,7 @@ def next_shutdown(now, at):
     return shutdown if shutdown > after else shutdown + datetime.timedelta(days=1)
 
 
-def reconcile(now, uptime, env, marker, opener, run):
+def reconcile(now, uptime, env, marker, starts, opener, run):
     """One pass. Returns False when anything failed; each failure is logged once."""
     try:
         deadline, problem = read_marker(marker, now)
@@ -218,13 +262,22 @@ def reconcile(now, uptime, env, marker, opener, run):
             if power in START_FROM and waited >= start_wait:
                 shutdown = next_shutdown(now, vm1_shutdown)
                 if now + datetime.timedelta(seconds=WORKER_READY + worst_job) < shutdown:
+                    _, finished = step("fim de job no banco, partida adiada", worker_heartbeat, run)
+                    streak = [start for start in step("registro de partidas, partida adiada", read_starts, starts)
+                              if finished is None or start > finished]
+                    if len(streak) >= START_LIMIT:
+                        log(False, f"{len(streak)} partidas seguidas da VM2 sem nenhum job terminado, desde "
+                                   f"{utc_text(streak[0])}: a VM2 só liga de novo depois que um job terminar")
+                        return False
                     status = step("start da VM2", vm2_action, "start", arm_token, opener)
-                    log(True, f"start da VM2 pedido (HTTP {status}): estava {power}, e o job mais antigo espera há {int(waited)} s")
+                    log(True, f"start da VM2 pedido (HTTP {status}), partida {len(streak) + 1} de {START_LIMIT} sem job "
+                              f"terminado: estava {power}, e o job mais antigo espera há {int(waited)} s")
+                    step("registro da partida, fora da contagem", write_starts, starts, [*streak, now])
                 else:
                     log(True, f"partida da VM2 adiada: {WORKER_READY} s até o worker pronto e {worst_job} s do pior job "
                               f"passam do desligamento da VM1 em {utc_text(shutdown)}")
         elif power in DEALLOCATE_FROM and since is not None and (now - since).total_seconds() > visibility:
-            beat = step("heartbeat do worker, desalocação adiada", heartbeat_age, run)
+            beat, _ = step("heartbeat do worker, desalocação adiada", worker_heartbeat, run)
             if beat is None or beat > visibility:
                 status = step("deallocate da VM2", vm2_action, "deallocate", arm_token, opener)
                 heartbeat = "nenhum heartbeat" if beat is None else f"heartbeat de {beat} s"
@@ -240,7 +293,7 @@ def main():
     syslog.openlog("pathsol-reconciliador", 0, syslog.LOG_LOCAL0)
     with open("/proc/uptime") as file:
         uptime = float(file.read().split()[0])
-    sys.exit(0 if reconcile(datetime.datetime.now(UTC), uptime, os.environ, MARKER, urlopen, run) else 1)
+    sys.exit(0 if reconcile(datetime.datetime.now(UTC), uptime, os.environ, MARKER, STARTS, urlopen, run) else 1)
 
 
 if __name__ == "__main__":

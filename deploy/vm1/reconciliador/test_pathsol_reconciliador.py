@@ -25,9 +25,10 @@ IMDS = "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-0
 IMDS_ARM = IMDS + "https://management.azure.com/"
 IMDS_STORAGE = IMDS + "https://storage.azure.com/"
 TOKENS = {IMDS_ARM: "eyJhcm0tdm0xIn0", IMDS_STORAGE: "eyJmaWxhLXZtMSJ9"}
-HEARTBEAT_QUERY = [
-    "docker", "exec", "-u", "postgres", "pathsol-banco", "psql", "-X", "-At", "-d", "pathsol",
-    "-c", "select extract(epoch from now() - max(beat_at))::bigint from worker_heartbeat",
+WORKER_HEARTBEAT = [
+    "docker", "exec", "-u", "postgres", "pathsol-banco", "psql", "-X", "-At", "-d", "pathsol", "-c",
+    "select extract(epoch from now() - max(beat_at))::bigint, extract(epoch from max(finished_at))::bigint"
+    " from worker_heartbeat",
 ]
 # A message as the producer writes it, with synthetic identifiers only.
 JOB_ID = "6b0f3c9e-2d4a-4f1b-9c7e-1a2b3c4d5e6f"
@@ -124,9 +125,11 @@ class Azure:
 
 
 class Database:
-    """Fake docker exec of psql: the heartbeat age as psql -At prints it."""
+    """Fake docker exec of psql: the heartbeat age and the epoch of the last
+    job end as psql -At prints them, "age|epoch", with an empty field for
+    null; "|" when the worker never beat."""
 
-    def __init__(self, out="1801\n", error=None):
+    def __init__(self, out="1801|\n", error=None):
         self.out, self.error = out, error
         self.calls = []
 
@@ -146,17 +149,28 @@ class ReconcilerTest(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.marker = os.path.join(directory.name, "manutencao-vm2")
+        self.state = os.path.join(directory.name, "pathsol-reconciliador")  # as StateDirectory= makes it
+        os.mkdir(self.state)
+        self.starts = os.path.join(self.state, "partidas")
 
     def write_marker(self, text, written):
         with open(self.marker, "w", encoding="utf-8") as file:
             file.write(text)
         os.utime(self.marker, (written.timestamp(), written.timestamp()))
 
+    def write_starts(self, text):
+        with open(self.starts, "w", encoding="utf-8") as file:
+            file.write(text)
+
+    def recorded(self):
+        with open(self.starts, encoding="utf-8") as file:
+            return file.read()
+
     def reconcile(self, azure, database=None, now=NOW, env=ENV, uptime=36000.0):
         """One pass; returns its result and the syslog lines as (priority, text)."""
         lines = []
         with mock.patch.object(reconciliador.syslog, "syslog", lambda priority, text: lines.append((priority, text))):
-            ok = reconciliador.reconcile(now, uptime, env, self.marker, azure, database or Database())
+            ok = reconciliador.reconcile(now, uptime, env, self.marker, self.starts, azure, database or Database())
         for priority, text in lines:
             self.assertIn((priority, text.split(" ", 1)[0]), {(syslog.LOG_INFO, "OK"), (syslog.LOG_ERR, "FALHA")}, text)
             for value in NEVER_LOGGED:
@@ -248,6 +262,176 @@ class ShutdownRule(ReconcilerTest):
         self.assertEqual(azure.posts(), [START])
 
 
+class StartLimit(ReconcilerTest):
+    """Pedro, 06/11: after 3 starts of VM2 in a row without any job reaching a
+    terminal state, no start until one does."""
+
+    THREE = "2026-11-03T13:00:00Z\n2026-11-03T13:30:00Z\n2026-11-03T14:00:00Z\n"
+
+    def test_three_starts_in_a_row_go_out_and_the_fourth_does_not(self):
+        # A worker broken at boot: the watchdog deallocates VM2, and the job stays visible.
+        passes = (
+            (NOW, "2026-11-03T15:00:00Z\n"),
+            (utc(2026, 11, 3, 15, 20), "2026-11-03T15:00:00Z\n2026-11-03T15:20:00Z\n"),
+            (utc(2026, 11, 3, 15, 40), "2026-11-03T15:00:00Z\n2026-11-03T15:20:00Z\n2026-11-03T15:40:00Z\n"),
+        )
+        for count, (now, record) in enumerate(passes, start=1):
+            with self.subTest(start=count):
+                azure = Azure(inserted=JOB)
+                ok, lines = self.reconcile(azure, Database("|\n"), now=now)
+                self.assertTrue(ok)
+                self.assertEqual(azure.posts(), [START])
+                self.assertEqual(failures(lines), [])
+                self.assertIn(f"partida {count} de 3 sem job terminado", lines[-1][1])
+                self.assertEqual(self.recorded(), record)
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure, Database("|\n"), now=utc(2026, 11, 3, 16, 0))
+        self.assertFalse(ok)
+        self.assertEqual(azure.calls, [("GET", PEEK), ("GET", INSTANCE_VIEW)])
+        self.assertEqual(lines[0], (syslog.LOG_INFO, "OK idade do job mais antigo: 4500 s"))
+        [failure] = failures(lines)
+        self.assertIn("3 partidas seguidas da VM2 sem nenhum job terminado", failure)
+        self.assertIn("desde 2026-11-03T15:00:00Z", failure)
+        self.assertIn("depois que um job terminar", failure)
+        self.assertEqual(self.recorded(), passes[-1][1])
+
+    def test_a_job_end_after_a_recorded_start_resets_the_count(self):
+        cases = (
+            # a job ended at 13:10, between the first start and the second
+            (self.THREE, "1801|1793711400\n", 3,
+             "2026-11-03T13:30:00Z\n2026-11-03T14:00:00Z\n2026-11-03T15:00:00Z\n"),
+            # at 14:10, after the last one
+            (self.THREE, "1801|1793715000\n", 1, "2026-11-03T15:00:00Z\n"),
+            # a longer record, written by hand, comes down to the starts after the job end
+            ("2026-11-03T11:00:00Z\n2026-11-03T12:00:00Z\n" + self.THREE, "1801|1793711400\n", 3,
+             "2026-11-03T13:30:00Z\n2026-11-03T14:00:00Z\n2026-11-03T15:00:00Z\n"),
+        )
+        for before, out, count, after in cases:
+            with self.subTest(before=before, out=out):
+                self.write_starts(before)
+                azure = Azure(inserted=JOB)
+                ok, lines = self.reconcile(azure, Database(out))
+                self.assertTrue(ok)
+                self.assertEqual(azure.posts(), [START])
+                self.assertIn(f"partida {count} de 3 sem job terminado", lines[-1][1])
+                self.assertEqual(self.recorded(), after)
+
+    def test_a_job_end_older_than_every_start_resets_nothing(self):
+        self.write_starts(self.THREE)
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure, Database("1801|1793710799\n"))  # 12:59:59
+        self.assertFalse(ok)
+        self.assertEqual(azure.posts(), [])
+        [failure] = failures(lines)
+        self.assertIn("desde 2026-11-03T13:00:00Z", failure)
+        self.assertEqual(self.recorded(), self.THREE)
+
+    def test_no_record_and_no_job_end_yet_make_the_first_start(self):
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure, Database("1801|\n"))
+        self.assertTrue(ok)
+        self.assertEqual(azure.posts(), [START])
+        self.assertIn("partida 1 de 3 sem job terminado", lines[-1][1])
+        self.assertEqual(self.recorded(), "2026-11-03T15:00:00Z\n")
+
+    def test_the_record_is_replaced_never_rewritten_in_place(self):
+        self.write_starts("2026-11-03T14:00:00Z\n")
+        old = os.path.join(os.path.dirname(self.state), "antes")
+        os.link(self.starts, old)  # the old file, as a reader that has it open sees it
+        ok, _ = self.reconcile(Azure(inserted=JOB))
+        self.assertTrue(ok)
+        with open(old, encoding="utf-8") as file:
+            self.assertEqual(file.read(), "2026-11-03T14:00:00Z\n")
+        self.assertEqual(self.recorded(), "2026-11-03T14:00:00Z\n2026-11-03T15:00:00Z\n")
+        self.assertEqual(os.listdir(self.state), ["partidas"])
+
+    def test_a_start_that_cannot_be_recorded_is_logged_and_is_a_failure(self):
+        os.rmdir(self.state)  # run without its StateDirectory
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure)
+        self.assertFalse(ok)
+        self.assertEqual(azure.posts(), [START])
+        self.assertEqual([priority for priority, _ in lines], [syslog.LOG_INFO, syslog.LOG_INFO, syslog.LOG_ERR])
+        self.assertIn("partida 1 de 3", lines[1][1])
+
+    def test_a_start_arm_refuses_is_not_recorded(self):
+        self.write_starts("2026-11-03T14:00:00Z\n")
+        azure = Azure(inserted=JOB, failing={START})
+        ok, _ = self.reconcile(azure)
+        self.assertFalse(ok)
+        self.assertEqual(azure.posts(), [START])
+        self.assertEqual(self.recorded(), "2026-11-03T14:00:00Z\n")
+
+    def test_a_malformed_record_holds_the_start_and_names_the_file(self):
+        contents = (b"ontem\n", b"2026-11-03T14:00:00\n", b"2026-11-03 14:00:00Z\n", b"2026-11-03T14:00:00Z\n\n",
+                    b"2026-11-31T14:00:00Z\n", b"2026-11-03T14:00:00Z 2026-11-03T14:30:00Z\n",
+                    "2026-11-03T14:00:00Z\n".encode("utf-16"))
+        for content in contents:
+            with self.subTest(content=content):
+                with open(self.starts, "wb") as file:
+                    file.write(content)
+                azure = Azure(inserted=JOB)
+                ok, lines = self.reconcile(azure)
+                self.assertFalse(ok)
+                self.assertEqual(azure.posts(), [])
+                [failure] = failures(lines)
+                self.assertIn(self.starts, failure)
+                self.assertNotIn("ontem", failure)
+                with open(self.starts, "rb") as file:
+                    self.assertEqual(file.read(), content)
+
+    def test_an_unreadable_record_holds_the_start(self):
+        os.mkdir(self.starts)
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure)
+        self.assertFalse(ok)
+        self.assertEqual(azure.posts(), [])
+        [failure] = failures(lines)
+        self.assertIn(self.starts, failure)
+
+    def test_a_failed_database_read_holds_the_start(self):
+        # Before migration 0004 the column does not exist.
+        stderr = 'ERROR:  column "finished_at" does not exist\nLINE 1: ...from max(finished_at))::bigint from worker_heartbeat\n'
+        self.write_starts("2026-11-03T14:00:00Z\n")
+        azure = Azure(inserted=JOB)
+        ok, lines = self.reconcile(azure, Database(error=subprocess.CalledProcessError(1, WORKER_HEARTBEAT, "", stderr)))
+        self.assertFalse(ok)
+        self.assertEqual(azure.posts(), [])
+        [failure] = failures(lines)
+        self.assertIn('column "finished_at" does not exist', failure)
+        self.assertEqual(self.recorded(), "2026-11-03T14:00:00Z\n")
+
+    def test_maintenance_counts_no_start_and_leaves_the_record_untouched(self):
+        self.write_marker("2026-11-03T16:00:00Z\n", written=utc(2026, 11, 3, 14, 30))
+        self.write_starts("2026-11-03T13:00:00Z\n2026-11-03T14:00:00Z\n")
+        before = os.stat(self.starts)
+        azure, database = Azure(inserted=JOB), Database()
+        ok, _ = self.reconcile(azure, database)
+        self.assertTrue(ok)
+        self.assertEqual(azure.posts(), [])
+        self.assertEqual(database.calls, [])
+        after = os.stat(self.starts)
+        self.assertEqual((after.st_ino, after.st_mtime_ns), (before.st_ino, before.st_mtime_ns))
+        self.assertEqual(self.recorded(), "2026-11-03T13:00:00Z\n2026-11-03T14:00:00Z\n")
+
+    def test_only_a_pass_that_would_start_reads_the_database_and_the_record(self):
+        self.write_starts("ontem\n")
+        down = Database(error=subprocess.CalledProcessError(
+            1, WORKER_HEARTBEAT, "", "Error response from daemon: No such container: pathsol-banco\n"))
+        passes = (
+            (Azure(inserted=JOB, power="running"), NOW),
+            (Azure(inserted=JOB), utc(2026, 11, 3, 14, 59, 59)),  # the job waited 899 s
+            (Azure(inserted="Wed, 04 Nov 2026 01:00:00 GMT"), utc(2026, 11, 4, 1, 40)),  # VM1 shuts down at 02:00
+        )
+        for azure, now in passes:
+            with self.subTest(power=azure.power, now=now):
+                ok, lines = self.reconcile(azure, down, now=now)
+                self.assertTrue(ok)
+                self.assertEqual(azure.posts(), [])
+                self.assertEqual(failures(lines), [])
+        self.assertEqual(down.calls, [])
+
+
 class NextShutdown(unittest.TestCase):
     def test_around_midnight_utc(self):
         cases = (
@@ -288,36 +472,45 @@ class ArmTime(unittest.TestCase):
 
 class Deallocate(ReconcilerTest):
     def test_deallocates_running_vm2_with_no_job_and_a_stale_heartbeat(self):
-        azure, database = Azure(power="running"), Database("1801\n")
+        azure, database = Azure(power="running"), Database("1801|1793716800\n")  # a job ended at 14:40
         ok, lines = self.reconcile(azure, database)
         self.assertTrue(ok)
         self.assertEqual(azure.calls, [("GET", PEEK), ("GET", INSTANCE_VIEW), ("POST", DEALLOCATE)])
-        self.assertEqual(database.calls, [HEARTBEAT_QUERY])
+        self.assertEqual(database.calls, [WORKER_HEARTBEAT])
         self.assertEqual(len(lines), 1)
         self.assertEqual(failures(lines), [])
 
     def test_worker_that_never_beat_counts_as_stale(self):
         azure = Azure(power="running")
-        ok, _ = self.reconcile(azure, Database("\n"))
+        ok, _ = self.reconcile(azure, Database("|\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [DEALLOCATE])
 
+    def test_heartbeat_with_no_job_end_yet_counts_by_its_age(self):
+        for out, posts in (("1801|\n", [DEALLOCATE]), ("1800|\n", [])):
+            with self.subTest(out=out):
+                azure = Azure(power="running")
+                ok, lines = self.reconcile(azure, Database(out))
+                self.assertTrue(ok)
+                self.assertEqual(azure.posts(), posts)
+                self.assertEqual(failures(lines), [])
+
     def test_visible_job_keeps_vm2_even_without_heartbeat(self):
         azure = Azure(inserted=JOB, power="running")
-        ok, _ = self.reconcile(azure, Database("\n"))
+        ok, _ = self.reconcile(azure, Database("|\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [])
 
     def test_recent_start_keeps_vm2(self):
         azure = Azure(power="running", since="2026-11-03T14:30:00.0000000+00:00")  # exactly 1800 s
-        ok, lines = self.reconcile(azure, Database("\n"))
+        ok, lines = self.reconcile(azure, Database("|\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [])
         self.assertEqual(lines, [])
 
     def test_recent_heartbeat_keeps_vm2(self):
         azure = Azure(power="running")
-        ok, lines = self.reconcile(azure, Database("1800\n"))
+        ok, lines = self.reconcile(azure, Database("1800|1793716800\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [])
         self.assertEqual(lines, [])
@@ -326,34 +519,43 @@ class Deallocate(ReconcilerTest):
         env = {**ENV, "PATHSOL_VISIBILIDADE": "3600"}
         started = "2026-11-03T13:59:59.0000000+00:00"  # 3601 s
         azure = Azure(power="running", since=STARTED)
-        self.reconcile(azure, Database("3601\n"), env=env)
+        self.reconcile(azure, Database("3601|\n"), env=env)
         self.assertEqual(azure.posts(), [])
         azure = Azure(power="running", since=started)
-        self.reconcile(azure, Database("3000\n"), env=env)
+        self.reconcile(azure, Database("3000|\n"), env=env)
         self.assertEqual(azure.posts(), [])
         azure = Azure(power="running", since=started)
-        self.reconcile(azure, Database("3601\n"), env=env)
+        self.reconcile(azure, Database("3601|\n"), env=env)
         self.assertEqual(azure.posts(), [DEALLOCATE])
 
     def test_failed_heartbeat_query_skips_the_rule(self):
         stderr = 'ERROR:  relation "worker_heartbeat" does not exist\nLINE 1: ...from worker_heartbeat\n      ^\n'
         azure = Azure(power="running")
-        ok, lines = self.reconcile(azure, Database(error=subprocess.CalledProcessError(1, HEARTBEAT_QUERY, "", stderr)))
+        ok, lines = self.reconcile(azure, Database(error=subprocess.CalledProcessError(1, WORKER_HEARTBEAT, "", stderr)))
         self.assertFalse(ok)
         self.assertEqual(azure.posts(), [])
         [failure] = failures(lines)
         self.assertIn('relation "worker_heartbeat" does not exist', failure)
 
+    def test_unexpected_database_answer_skips_the_rule(self):
+        for out in ("1801\n", "\n", "ontem|\n"):  # the first one is the answer of the one-column query
+            with self.subTest(out=out):
+                azure = Azure(power="running")
+                ok, lines = self.reconcile(azure, Database(out))
+                self.assertFalse(ok)
+                self.assertEqual(azure.posts(), [])
+                self.assertEqual(len(failures(lines)), 1)
+
     def test_running_vm2_under_another_operation_waits(self):
         azure = Azure(power="running", provisioning="updating", since=None)
-        ok, lines = self.reconcile(azure, Database("\n"))
+        ok, lines = self.reconcile(azure, Database("|\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [])
         self.assertEqual(lines, [])
 
     def test_stopped_vm2_keeps_billing_and_is_deallocated(self):
         azure = Azure(power="stopped")
-        ok, lines = self.reconcile(azure, Database("\n"))
+        ok, lines = self.reconcile(azure, Database("|\n"))
         self.assertTrue(ok)
         self.assertEqual(azure.posts(), [DEALLOCATE])
         self.assertEqual(failures(lines), [])
@@ -362,7 +564,7 @@ class Deallocate(ReconcilerTest):
         for power in ("deallocated", "starting", "stopping", "deallocating"):
             with self.subTest(power=power):
                 azure = Azure(power=power)
-                ok, lines = self.reconcile(azure, Database("\n"))
+                ok, lines = self.reconcile(azure, Database("|\n"))
                 self.assertTrue(ok)
                 self.assertEqual(azure.posts(), [])
                 self.assertEqual(lines, [])
@@ -373,7 +575,7 @@ class Maintenance(ReconcilerTest):
         self.write_marker("2026-11-03T16:00:00Z\n", written=utc(2026, 11, 3, 14, 30))
         for azure in (Azure(inserted=JOB), Azure(power="running")):
             with self.subTest(power=azure.power):
-                ok, lines = self.reconcile(azure, Database("\n"))
+                ok, lines = self.reconcile(azure, Database("|\n"))
                 self.assertTrue(ok)
                 self.assertEqual(azure.posts(), [])
                 self.assertEqual(lines[:1], [(syslog.LOG_INFO, "OK manutenção até 2026-11-03T16:00:00Z")])
@@ -403,6 +605,8 @@ class Maintenance(ReconcilerTest):
 
     def assert_ignored(self):
         """The marker is logged as FALHA once and the start goes ahead."""
+        if os.path.exists(self.starts):
+            os.remove(self.starts)  # every call is a first start, far from the start limit
         azure = Azure(inserted=JOB)
         ok, lines = self.reconcile(azure)
         self.assertFalse(ok)
@@ -501,7 +705,7 @@ class Failures(ReconcilerTest):
 
     def test_failed_deallocate_is_a_failure(self):
         azure = Azure(power="running", failing={DEALLOCATE})
-        ok, lines = self.reconcile(azure, Database("\n"))
+        ok, lines = self.reconcile(azure, Database("|\n"))
         self.assertFalse(ok)
         self.assertEqual(azure.posts(), [DEALLOCATE])
         self.assertEqual([priority for priority, _ in lines], [syslog.LOG_ERR])
@@ -518,20 +722,30 @@ class Main(unittest.TestCase):
     def test_exit_code_follows_the_pass_and_lines_go_to_local0(self):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
-        for azure, code, priorities in ((Azure(), 0, []), (Azure(failing={PEEK}), 1, [syslog.LOG_ERR])):
+        starts = os.path.join(directory.name, "partidas")
+        with open(starts, "w", encoding="utf-8") as file:
+            file.write(StartLimit.THREE)
+        # VM1 shuts down an hour from now, so the visible job meets the start limit.
+        shutdown = (datetime.datetime.now(UTC) + datetime.timedelta(hours=1)).strftime("%H:%M")
+        cases = ((Azure(), 0, []), (Azure(failing={PEEK}), 1, [syslog.LOG_ERR]),
+                 (Azure(inserted=JOB), 1, [syslog.LOG_INFO, syslog.LOG_ERR]))
+        for azure, code, priorities in cases:
             opened, logged = [], []
             with mock.patch.object(reconciliador, "urlopen", azure), \
                     mock.patch.object(reconciliador, "run", Database()), \
                     mock.patch.object(reconciliador, "MARKER", os.path.join(directory.name, "manutencao-vm2")), \
+                    mock.patch.object(reconciliador, "STARTS", starts), \
+                    mock.patch.dict(os.environ, {**ENV, "PATHSOL_DESLIGA_VM1": shutdown}), \
                     mock.patch.object(reconciliador.syslog, "openlog",
                                       lambda ident, logoption=0, facility=0: opened.append((ident, facility))), \
                     mock.patch.object(reconciliador.syslog, "syslog", lambda priority, text: logged.append(priority)):
                 with self.assertRaises(SystemExit) as exit_:
                     reconciliador.main()
-            with self.subTest(code=code):
+            with self.subTest(code=code, priorities=priorities):
                 self.assertEqual(exit_.exception.code, code)
                 self.assertEqual(opened, [("pathsol-reconciliador", syslog.LOG_LOCAL0)])
                 self.assertEqual(logged, priorities)
+                self.assertEqual(azure.posts(), [])
 
 
 if __name__ == "__main__":
