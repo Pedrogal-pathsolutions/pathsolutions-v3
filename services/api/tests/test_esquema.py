@@ -219,12 +219,14 @@ class Schema(unittest.TestCase):
     def test_heartbeat_holds_no_tenant_data_and_only_the_worker_beats(self):
         columns = [r[0] for r in self.db.execute(
             "select column_name from information_schema.columns where table_name = 'worker_heartbeat' order by ordinal_position")]
-        self.assertEqual(columns, ["worker", "beat_at"])
+        self.assertEqual(columns, ["worker", "beat_at", "finished_at"])
         worker = self.as_role("pathsol_worker")
         worker.execute("insert into worker_heartbeat values ('vm2', now()) "
                        "on conflict (worker) do update set beat_at = excluded.beat_at")
         worker.execute("insert into worker_heartbeat values ('vm2', now()) "
                        "on conflict (worker) do update set beat_at = excluded.beat_at")
+        worker.execute("insert into worker_heartbeat values ('vm2', now(), now()) "
+                       "on conflict (worker) do update set finished_at = excluded.finished_at")
         with self.assertRaises(errors.InsufficientPrivilege):
             worker.execute("delete from worker_heartbeat")
         producer = self.as_role("pathsol_produtor")
