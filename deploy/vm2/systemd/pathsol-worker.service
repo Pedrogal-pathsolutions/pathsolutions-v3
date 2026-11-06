@@ -32,7 +32,9 @@ ExecStart=/usr/bin/docker run --rm --pull never --init --name pathsol-worker --g
     -e PATHSOL_PULSO=/var/lib/pathsol/pulso \
     -e PATHSOL_MANUTENCAO=/etc/pathsol/manutencao \
     pathsol-worker:bfbd7d4 pathsol_worker
-ExecStop=/usr/bin/docker stop --timeout 30 pathsol-worker
+# systemd runs ExecStop also after the worker leaves on its own, when --rm has
+# already removed the container and docker stop fails (seen 06/11): ignored.
+ExecStop=-/usr/bin/docker stop --timeout 30 pathsol-worker
 # docker stop ends the worker by SIGTERM, which docker run returns as 143.
 SuccessExitStatus=143
 SyslogIdentifier=pathsol-worker
