@@ -34,12 +34,15 @@ resource "azurerm_storage_container" "backup" {
 # Plan 7: pathsol-banco writes every check of the database, the backups, the
 # restore test and the TLS certificates to syslog local0; failures with
 # priority err, which the agent stores as SeverityLevel "error" (seen 29/10).
+# Since 06/11 (Pedro) the same rule takes the FALHA lines of the VM2
+# reconciler on VM1 and of the watchdog on VM2, at no new cost; the name stays,
+# because a new one would replace the rule.
 resource "azurerm_monitor_scheduled_query_rules_alert_v2" "banco_falha" {
   name                    = "pathsol-banco-falha-v3"
   resource_group_name     = data.azurerm_resource_group.v3.name
   location                = local.location
   scopes                  = [azurerm_log_analytics_workspace.v3.id]
-  description             = "Falha no banco, no backup, no dump, na restauracao ou num certificado TLS (Syslog local0, pathsol-banco)."
+  description             = "Falha no banco, no backup, no dump, na restauracao, num certificado TLS, no reconciliador da VM2 ou no watchdog (Syslog local0)."
   severity                = 1
   evaluation_frequency    = "PT15M"
   window_duration         = "PT30M"
@@ -48,8 +51,9 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "banco_falha" {
   criteria {
     query                   = <<-KQL
       Syslog
-      | where _ResourceId =~ "${data.azurerm_virtual_machine.vm1.id}"
-      | where Facility == "local0" and ProcessName == "pathsol-banco" and SeverityLevel == "error"
+      | where Facility == "local0" and SeverityLevel == "error"
+      | where (_ResourceId =~ "${data.azurerm_virtual_machine.vm1.id}" and ProcessName in ("pathsol-banco", "pathsol-reconciliador"))
+          or (_ResourceId =~ "${data.azurerm_virtual_machine.vm2.id}" and ProcessName == "pathsol-watchdog")
       | summarize Falhas = count()
     KQL
     time_aggregation_method = "Total"

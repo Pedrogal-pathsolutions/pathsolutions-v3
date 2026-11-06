@@ -138,6 +138,46 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "vm2_ligada" {
   tags = merge(local.tags, { componente = "alertas" })
 }
 
+# Plan 9.4: a job waiting more than 4 h. The reconciler logs the age of the
+# oldest visible job on every pass that sees one, counted only while VM1 is on.
+resource "azurerm_monitor_scheduled_query_rules_alert_v2" "job_na_fila" {
+  name                    = "pathsol-job-na-fila-v3"
+  resource_group_name     = data.azurerm_resource_group.v3.name
+  location                = local.location
+  scopes                  = [azurerm_log_analytics_workspace.v3.id]
+  description             = "Um job espera na fila ha mais de 4 horas, contadas so com a VM1 ligada (reconciliador, Syslog local0)."
+  severity                = 2
+  evaluation_frequency    = "PT15M"
+  window_duration         = "PT15M"
+  auto_mitigation_enabled = true
+
+  criteria {
+    query                   = <<-KQL
+      Syslog
+      | where _ResourceId =~ "${data.azurerm_virtual_machine.vm1.id}"
+      | where Facility == "local0" and ProcessName == "pathsol-reconciliador"
+      | extend Segundos = toint(extract(@"^OK idade do job mais antigo: ([0-9]+) s$", 1, SyslogMessage))
+      | where isnotnull(Segundos)
+      | summarize Idade = max(Segundos)
+    KQL
+    time_aggregation_method = "Maximum"
+    metric_measure_column   = "Idade"
+    operator                = "GreaterThan"
+    threshold               = 14400
+
+    failing_periods {
+      minimum_failing_periods_to_trigger_alert = 1
+      number_of_evaluation_periods             = 1
+    }
+  }
+
+  action {
+    action_groups = [azurerm_monitor_action_group.alertas.id]
+  }
+
+  tags = merge(local.tags, { componente = "alertas" })
+}
+
 # Plan 18: an unexpected outage of VM1 writes nothing to status.json, so this
 # tells Pedro. Platform causes only; the nightly shutdown is ours. Free.
 # Not Unknown: every deallocation first reports cause Unknown and only seconds
