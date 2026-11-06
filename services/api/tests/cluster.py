@@ -24,11 +24,18 @@ class Cluster:
              "--locale=C.UTF-8", "--locale-provider=builtin", "--builtin-locale=C.UTF-8"],
             check=True, capture_output=True,
         )
+        self.start()
+
+    def start(self):
         subprocess.run(
             [f"{BIN}/pg_ctl", "-D", self.data, "-w", "-l", os.path.join(self.dir, "log"),
              "-o", f"-k {self.dir} -c listen_addresses=''", "start"],
             check=True, capture_output=True,
         )
+
+    def shutdown(self):
+        """A fast shutdown that keeps the data, as a database restart does; start() brings it back."""
+        subprocess.run([f"{BIN}/pg_ctl", "-D", self.data, "-w", "-m", "fast", "stop"], check=True, capture_output=True)
 
     def psql(self, sql, db="postgres"):
         return subprocess.run(

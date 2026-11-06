@@ -95,13 +95,48 @@ class Loop(unittest.TestCase):
 
     def test_a_database_heartbeat_failure_does_not_stop_the_worker(self):
         clock = Clock()
+        handled = []
 
         def heartbeat():
-            raise banco.psycopg.OperationalError("banco fora do ar")
+            raise banco.psycopg.errors.InsufficientPrivilege("permissão negada")
 
         with self.assertLogs("pathsol_worker", "WARNING"):
-            servico.run(Jobs([]), None, None, None, visibility=1800, idle=600, heartbeat=heartbeat,
-                        clock=clock, sleep=clock.sleep)
+            servico.run(Jobs(["a"]), None, None, None, visibility=1800, idle=600, heartbeat=heartbeat,
+                        clock=clock, sleep=clock.sleep, handle=lambda received, *_: handled.append(received.text))
+        self.assertEqual(handled, ["a"])
+        self.assertGreaterEqual(clock.now, 600)
+
+    def test_takes_no_job_while_the_database_does_not_answer(self):
+        clock, calls, handled = Clock(), [], []
+
+        class Watched(Jobs):
+            def get(self, visibility_timeout):
+                calls.append("get")
+                return super().get(visibility_timeout)
+
+        def heartbeat():
+            if calls.count("banco fora") < 2:
+                calls.append("banco fora")
+                raise banco.Unavailable("banco fora do ar")
+            calls.append("heartbeat")
+
+        with self.assertLogs("pathsol_worker", "WARNING"):
+            servico.run(Watched(["a"]), None, None, None, visibility=1800, idle=600, heartbeat=heartbeat,
+                        clock=clock, sleep=clock.sleep, handle=lambda received, *_: handled.append(received.text))
+        self.assertEqual(calls[:4], ["banco fora", "banco fora", "heartbeat", "get"])
+        self.assertEqual(handled, ["a"])
+
+    def test_with_the_database_down_for_good_the_worker_stops_when_idle(self):
+        clock = Clock()
+        jobs = Jobs(["a"])
+
+        def heartbeat():
+            raise banco.Unavailable("banco fora do ar")
+
+        with self.assertLogs("pathsol_worker", "WARNING"):
+            servico.run(jobs, None, None, None, visibility=1800, idle=600, heartbeat=heartbeat,
+                        clock=clock, sleep=clock.sleep, handle=lambda *_: self.fail("pegou job"))
+        self.assertEqual(jobs.timeouts, [])
         self.assertGreaterEqual(clock.now, 600)
 
     def test_takes_no_job_when_it_could_pass_vm1_shutdown(self):

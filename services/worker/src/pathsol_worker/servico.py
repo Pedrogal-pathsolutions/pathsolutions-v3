@@ -11,8 +11,11 @@ Configured by the environment (the VM2 unit, slice 9):
   PATHSOL_PULSO         heartbeat file on the host, read by the watchdog (plan 8.3, layer 2)
   PATHSOL_MANUTENCAO    maintenance marker on the host, mounted read-only (pattern 11)
 The database password is the Key Vault secret banco-worker, read with VM2's
-identity (Pedro's option A of 30/10), and never logged. When the queue stays
-idle, VM2 deallocates itself (layer 1), unless a maintenance marker holds.
+identity (Pedro's option A of 30/10), and never logged. The job store
+connects on first use, so the worker starts with the database down, and
+while the database does not answer no message is taken (Pedro, 06/11). When
+no job comes for the idle period, the database down included, VM2
+deallocates itself (layer 1), unless a maintenance marker holds.
 """
 import contextlib
 import datetime
@@ -78,17 +81,26 @@ def beating(pulse, limit, every=PULSE):
         thread.join()
 
 
+def database_answers(heartbeat):
+    """False when the database does not answer: a message taken then would only go back to the queue."""
+    try:
+        heartbeat()
+    except banco.Unavailable as error:
+        log.warning("banco indisponível, nenhum job nesta volta: %s", error)
+        return False
+    except psycopg.Error as error:
+        log.warning("heartbeat no banco: %s", error)
+    return True
+
+
 def run(jobs, dead_letter, store, processor, visibility, idle, pulse=lambda: None, heartbeat=lambda: None,
         accepting=lambda: True, clock=time.monotonic, sleep=time.sleep, handle=consumidor.handle):
-    """`pulse` may run in another thread during a job; `heartbeat` uses the job store's connection, so only here."""
+    """`pulse` may run in another thread during a job; `heartbeat` uses the job store's connection, so only here.
+    While the database does not answer, the idle time keeps counting."""
     last = clock()
     while True:
         pulse()
-        try:
-            heartbeat()
-        except psycopg.Error as error:
-            log.warning("heartbeat no banco: %s", error)
-        received = jobs.get(visibility) if accepting() else None
+        received = jobs.get(visibility) if database_answers(heartbeat) and accepting() else None
         if received is None:
             if clock() - last >= idle:
                 return

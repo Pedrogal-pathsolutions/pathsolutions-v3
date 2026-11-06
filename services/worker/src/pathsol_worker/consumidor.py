@@ -6,6 +6,11 @@ Only those go back to the queue, hidden with backoff; the third goes to the
 dead-letter queue, only then leaves the main queue, and the job becomes
 DEAD_LETTER. A message that leaves the main queue was always handled first:
 written to the database or to the dead-letter queue.
+
+A database that does not answer is no failure of the job (Pedro, 06/11): the
+message goes back to the queue with its text unchanged, so its attempt does
+not go up, and nothing is counted. An outage never sends a job to the
+dead-letter queue.
 """
 import dataclasses
 
@@ -46,33 +51,41 @@ class Unsupported:
 
 
 def handle(received, jobs, dead_letter, store, process):
-    """Returns what happened, for the log. A database error is raised and leaves the message for the visibility timeout."""
+    """Returns what happened, for the log. Any other database error is raised and leaves the message for the
+    visibility timeout."""
     try:
         message = mensagem.parse(received.text)
     except mensagem.InvalidMessage:
         dead_letter.put(received.text)
         jobs.delete(received)
         return "inválida"
-    job = store.claim(message)
-    if job is None:
-        dead_letter.put(received.text)
-        jobs.delete(received)
-        return "não confere com o banco"
-    if job.status != "RUNNING":
-        jobs.delete(received)
-        return "já terminado"
     try:
-        outcome = process(job)
-    except Exception:  # every failure of the processing is a technical one
-        attempt = store.failed(job)
-        text = message.with_attempt(attempt).dumps()
-        if attempt >= banco.MAX_ATTEMPTS:
-            dead_letter.put(text)
+        job = store.claim(message)
+        if job is None:
+            dead_letter.put(received.text)
             jobs.delete(received)
-            store.dead_letter(job)
-            return "DEAD_LETTER"
-        jobs.update(received, BACKOFF * 2 ** (attempt - 1), text)
-        return "nova tentativa"
-    outcome.record(store, job)
+            return "não confere com o banco"
+        if job.status != "RUNNING":
+            jobs.delete(received)
+            return "já terminado"
+        try:
+            outcome = process(job)
+        except Exception:  # every failure of the processing is a technical one
+            attempt = store.failed(job)
+            text = message.with_attempt(attempt).dumps()
+            if attempt < banco.MAX_ATTEMPTS:
+                jobs.update(received, BACKOFF * 2 ** (attempt - 1), text)
+                return "nova tentativa"
+        else:
+            outcome.record(store, job)
+            jobs.delete(received)
+            return outcome.state
+    except banco.Unavailable:
+        jobs.update(received, BACKOFF, received.text)
+        return "banco indisponível"
+    # Only the last technical failure gets here. Past the delete the message cannot go back to the queue,
+    # so an outage in store.dead_letter is raised.
+    dead_letter.put(text)
     jobs.delete(received)
-    return outcome.state
+    store.dead_letter(job)
+    return "DEAD_LETTER"
