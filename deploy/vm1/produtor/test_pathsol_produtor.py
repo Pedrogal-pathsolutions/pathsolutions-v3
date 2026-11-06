@@ -11,8 +11,11 @@ import pathsol_produtor as produtor
 
 TENANT = str(uuid.uuid4())
 SLIDE = str(uuid.uuid4())
+JOB = str(uuid.uuid4())
 SHA = "a" * 64
 TOKEN = "eyJ0b2tlbi1kYS12bTEifQ"
+# What the database gives back for an existing job: slide, pipeline version, then the values of "job".
+STORED = f"{SLIDE}|fase4-teste|{TENANT}|{SLIDE}.svs|estomago|biopsia\n"
 
 
 class Calls:
@@ -47,6 +50,11 @@ def run_main(calls, *argv):
         except SystemExit as exit_:
             code = exit_.code
     return code, out.getvalue(), err.getvalue()
+
+
+def sent_text(calls):
+    """The text of the message that went to the queue."""
+    return ElementTree.fromstring(calls.log[-1][2]).findtext("MessageText")
 
 
 class Job(unittest.TestCase):
@@ -85,6 +93,45 @@ class Job(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("FALHA", err)
         self.assertNotIn(TOKEN, err)
+
+
+class Resend(unittest.TestCase):
+    def test_reads_the_job_in_the_database_first_and_writes_nothing(self):
+        calls = Calls(psql_out=STORED)
+        code, out, _ = run_main(calls, "reenviar", "--tenant", "publico", "--job", JOB)
+        self.assertEqual(code, 0)
+        self.assertEqual([kind for kind, *_ in calls.log], ["psql", "imds", "fila"])
+        _, args, sql = calls.log[0]
+        self.assertEqual(args[:6], ["docker", "exec", "-i", "-u", "postgres", "pathsol-banco"])
+        self.assertIn(f"job={JOB}", args)
+        self.assertIn("SET LOCAL ROLE pathsol_produtor", sql)
+        self.assertNotRegex(sql, r"INSERT|UPDATE|DELETE")
+        self.assertIn(JOB, out)
+        self.assertNotIn(TOKEN, out)
+
+    def test_sends_the_text_that_job_sent(self):
+        first = Calls(psql_out=f"{TENANT}|{SLIDE}.svs|estomago|biopsia\n")
+        self.assertEqual(run_main(first, "job", "--tenant", "publico", "--lamina", SLIDE)[0], 0)
+        again = Calls(psql_out=STORED)
+        code, _, _ = run_main(again, "reenviar", "--tenant", "publico", "--job", json.loads(sent_text(first))["job_id"])
+        self.assertEqual(code, 0)
+        self.assertEqual(sent_text(again), sent_text(first))
+
+    def test_failed_send_names_the_job_and_fails(self):
+        calls = Calls(psql_out=STORED, fail_send=True)
+        code, _, err = run_main(calls, "reenviar", "--tenant", "publico", "--job", JOB)
+        self.assertEqual(code, 1)
+        self.assertIn("FALHA", err)
+        self.assertIn(JOB, err)
+        self.assertNotIn(TOKEN, err)
+
+    def test_refuses_a_job_that_is_not_a_uuid_before_any_call(self):
+        for value in ("caso-12345", JOB.upper(), ""):
+            calls = Calls(psql_out=STORED)
+            with self.subTest(value=value):
+                code, _, _ = run_main(calls, "reenviar", "--tenant", "publico", "--job", value)
+                self.assertNotEqual(code, 0)
+                self.assertEqual(calls.log, [])
 
 
 class Slide(unittest.TestCase):

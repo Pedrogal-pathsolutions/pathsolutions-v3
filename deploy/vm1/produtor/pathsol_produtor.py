@@ -5,12 +5,17 @@ operator, with no network port, and leaves the code in Phase 5.
     pathsol_produtor.py tenant SLUG
     pathsol_produtor.py lamina --tenant SLUG --arquivo UUID.svs --sha256 HEX --material M --coloracao C [--orgao O]
     pathsol_produtor.py job --tenant SLUG --lamina UUID [--versao-pipeline V]
+    pathsol_produtor.py reenviar --tenant SLUG --job UUID
 
 The tenant comes from the operator: the one approved exception to "tenant
 only from the JWT". Slide and job are written as pathsol_produtor, under RLS,
 by psql inside the database container. The message is built from the
 database's values and goes to the queue with VM1's identity only after the
 commit, so the worker never gets a job that is not in the database.
+
+reenviar writes nothing: it reads a job of the tenant and sends its message
+again, as "job" built it. It is test 2 of the worker's acceptance
+(idempotency): the worker only deletes the duplicate of a finished job.
 """
 import argparse
 import email.utils
@@ -44,10 +49,20 @@ SLIDE_SQL = AS_PRODUCER + """INSERT INTO slides (tenant_id, id, wsi_name, wsi_sh
 VALUES (:'tenant', :'slide', :'nome', :'sha256', NULLIF(:'orgao', ''), :'material', :'coloracao');
 COMMIT;
 """
-JOB_SQL = AS_PRODUCER + r"""SELECT wsi_name, coalesce(organ, '') AS organ, material FROM slides WHERE id = :'slide' \gset
-INSERT INTO jobs (tenant_id, id, slide_id, pipeline_version) VALUES (:'tenant', :'job', :'slide', :'versao');
+# The slide's values in the message, read as the producer: under RLS, only a slide of the tenant.
+SLIDE_VALUES = r"""SELECT wsi_name, coalesce(organ, '') AS organ, material FROM slides WHERE id = :'slide' \gset
+"""
+JOB_SQL = AS_PRODUCER + SLIDE_VALUES + r"""INSERT INTO jobs (tenant_id, id, slide_id, pipeline_version)
+VALUES (:'tenant', :'job', :'slide', :'versao');
 COMMIT;
 SELECT :'tenant' || '|' || :'wsi_name' || '|' || :'organ' || '|' || :'material';
+"""
+# pathsol_produtor has no SELECT on jobs (migrations 0001 and 0002), so the superuser reads the
+# job's slide and pipeline version, only within the tenant; the slide is then read as "job" reads it.
+STORED_SQL = r"""SELECT j.slide_id AS slide, j.pipeline_version AS versao FROM jobs j JOIN tenants t ON t.id = j.tenant_id
+WHERE t.slug = :'slug' AND j.id = :'job' \gset
+""" + AS_PRODUCER + SLIDE_VALUES + r"""ROLLBACK;
+SELECT :'slide' || '|' || :'versao' || '|' || :'tenant' || '|' || :'wsi_name' || '|' || :'organ' || '|' || :'material';
 """
 
 
@@ -92,10 +107,10 @@ def send(message):
         pass
 
 
-def job(slug, slide, version):
-    job_id = str(uuid.uuid4())
-    tenant, name, organ, material = psql(JOB_SQL, slug=slug, slide=slide, job=job_id, versao=version).split("|")
-    message = {
+def message(job_id, slug, slide, version, values):
+    """The job's message, with the values the database gave back: tenant|blob name|organ|material."""
+    tenant, name, organ, material = values.split("|")
+    return {
         "job_id": job_id,
         "tenant_id": tenant,
         "slide_id": slide,
@@ -105,13 +120,34 @@ def job(slug, slide, version):
         "pipeline_version": version,
         "attempt": 0,
     }
+
+
+def deliver(built, ok, failure):
     try:
-        send(message)
+        send(built)
     except (urllib.error.URLError, OSError) as error:
-        print(f"FALHA no envio do job {job_id}, que ficou QUEUED no banco sem mensagem: {error}", file=sys.stderr)
+        print(f"FALHA {failure}: {error}", file=sys.stderr)
         return 1
-    print(f"OK job {job_id} da lâmina {slide} no tenant {slug}: mensagem na fila")
+    print(f"OK {ok}")
     return 0
+
+
+def job(slug, slide, version):
+    job_id = str(uuid.uuid4())
+    built = message(job_id, slug, slide, version, psql(JOB_SQL, slug=slug, slide=slide, job=job_id, versao=version))
+    return deliver(built, f"job {job_id} da lâmina {slide} no tenant {slug}: mensagem na fila",
+                   f"no envio do job {job_id}, que ficou QUEUED no banco sem mensagem")
+
+
+def stored(slug, job_id):
+    """The message "job" sent for this job of the tenant, built again from the database, which is not written."""
+    slide, version, values = psql(STORED_SQL, slug=slug, job=job_id).split("|", 2)
+    return message(job_id, slug, slide, version, values)
+
+
+def resend(slug, job_id):
+    return deliver(stored(slug, job_id), f"mensagem do job {job_id} do tenant {slug} de novo na fila; nada gravado no banco",
+                   f"no envio da mensagem do job {job_id}")
 
 
 def parser():
@@ -131,6 +167,9 @@ def parser():
     new_job.add_argument("--tenant", required=True, type=slug)
     new_job.add_argument("--lamina", required=True, type=checked(UUID, "lâmina"))
     new_job.add_argument("--versao-pipeline", default="fase4-teste", type=checked(r"[A-Za-z0-9._-]{1,40}", "versão"))
+    again = commands.add_parser("reenviar", help="manda de novo à fila a mensagem de um job do tenant, sem gravar nada (teste 2)")
+    again.add_argument("--tenant", required=True, type=slug)
+    again.add_argument("--job", required=True, type=checked(UUID, "job"))
     return parser
 
 
@@ -146,7 +185,9 @@ def main(argv=None):
                  material=args.material, coloracao=args.coloracao, orgao=args.orgao)
             print(f"OK lâmina {slide} no tenant {args.tenant}")
             return 0
-        return job(args.tenant, args.lamina, args.versao_pipeline)
+        if args.comando == "job":
+            return job(args.tenant, args.lamina, args.versao_pipeline)
+        return resend(args.tenant, args.job)
     except subprocess.CalledProcessError as error:
         print(f"FALHA no banco: {error.stderr.strip()}", file=sys.stderr)
         return 1

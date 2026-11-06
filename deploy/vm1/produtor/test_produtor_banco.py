@@ -1,11 +1,15 @@
 """The producer's SQL against a throwaway cluster with the real schema.
 
-Runs in the API test image, which has PostgreSQL 18 and the schema:
+Runs in the API test image, which has PostgreSQL 18, with the API's migrations and test cluster mounted:
 
     docker run --rm --network none -v "$PWD/deploy/vm1/produtor:/produtor:ro" \
-        -e PYTHONPATH=/produtor:/src/services/api/tests pathsol-api-teste:<tag> \
+        -v "$PWD/services/api/src:/api:ro" -v "$PWD/services/api/tests:/atests:ro" \
+        -e PYTHONPATH=/produtor:/api:/atests pathsol-api-teste:<tag> \
         python -m unittest discover -s /produtor -p 'test_produtor_banco.py'
 """
+import contextlib
+import io
+import json
 import subprocess
 import unittest
 import uuid
@@ -44,6 +48,35 @@ class ProducerSql(unittest.TestCase):
         self.psql(produtor.SLIDE_SQL, slug=slug, slide=slide, nome=f"{slide}.svs", sha256="b" * 64,
                   material="biopsia", coloracao="HE", orgao="estomago")
         return slide
+
+    def sent(self, *argv):
+        """Runs a producer command on this cluster: (exit code, the messages it sent)."""
+        messages = []
+        with mock.patch.object(produtor, "run", self.local), mock.patch.object(produtor, "send", messages.append), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            code = produtor.main(list(argv))
+        return code, messages
+
+    def rows(self):
+        with self.cluster.connect() as db:
+            return [db.execute(f"select * from {table} order by id").fetchall() for table in ("tenants", "slides", "jobs")]
+
+    def test_resend_sends_the_text_of_job_and_inserts_nothing(self):
+        self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
+        _, (first,) = self.sent("job", "--tenant", "publico", "--lamina", self.slide("publico"))
+        before = self.rows()
+        code, (again,) = self.sent("reenviar", "--tenant", "publico", "--job", first["job_id"])
+        self.assertEqual(code, 0)
+        self.assertEqual(json.dumps(again), json.dumps(first))
+        self.assertEqual(self.rows(), before)
+
+    def test_job_of_another_tenant_or_unknown_sends_nothing(self):
+        self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
+        self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="diagnose")
+        _, (other,) = self.sent("job", "--tenant", "diagnose", "--lamina", self.slide("diagnose"))
+        for job in (other["job_id"], str(uuid.uuid4())):
+            with self.subTest(job=job):
+                self.assertEqual(self.sent("reenviar", "--tenant", "publico", "--job", job), (1, []))
 
     def test_tenant_is_created_once(self):
         first = self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
