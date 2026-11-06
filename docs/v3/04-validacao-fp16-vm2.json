@@ -1,0 +1,109 @@
+{
+  "inicio_utc": "2026-11-06T13:39:07+00:00",
+  "carga": {
+    "cuda_s": 0.29,
+    "modelo_s": 0.32,
+    "modelo_pronto_utc": "2026-11-06T13:39:07+00:00"
+  },
+  "gpu": {
+    "fp16": [
+      {
+        "lote": 32,
+        "patches_s": 78.8,
+        "memoria_gib": 1.61
+      },
+      {
+        "lote": 64,
+        "patches_s": 72.8,
+        "memoria_gib": 2.06
+      },
+      {
+        "lote": 128,
+        "patches_s": 73.3,
+        "memoria_gib": 2.97
+      },
+      {
+        "lote": 256,
+        "patches_s": 75.5,
+        "memoria_gib": 4.78
+      }
+    ],
+    "fp32": [
+      {
+        "lote": 32,
+        "patches_s": 21.7,
+        "memoria_gib": 1.7
+      },
+      {
+        "lote": 64,
+        "patches_s": 20.0,
+        "memoria_gib": 2.25
+      },
+      {
+        "lote": 128,
+        "patches_s": 21.7,
+        "memoria_gib": 3.35
+      },
+      {
+        "lote": 256,
+        "patches_s": 19.7,
+        "memoria_gib": 5.55
+      }
+    ]
+  },
+  "laminas": [
+    {
+      "arquivo": "115f9155-74b4-4a3b-a0fc-25024aa5d597.svs",
+      "dimensoes": [
+        46000,
+        32914
+      ],
+      "mpp": 0.499,
+      "niveis": 3,
+      "lado_nivel0": 224,
+      "candidatos": 6081,
+      "mascara_s": 11.35,
+      "cpu": [
+        {
+          "processos": 1,
+          "patches_s": 252.9
+        },
+        {
+          "processos": 2,
+          "patches_s": 115.3
+        },
+        {
+          "processos": 3,
+          "patches_s": 120.2
+        }
+      ],
+      "extraidos": 5943,
+      "rejeitados": 138,
+      "extracao_s": 86.87,
+      "ponta_a_ponta_s": 98.22,
+      "patches_s": 68.4,
+      "gpu_ocupada": 0.952,
+      "cosseno_fp16_fp32": {
+        "n": 256,
+        "media": 0.9999984547314619,
+        "minimo": 0.9999753248611714,
+        "nan_inf": false
+      }
+    }
+  ],
+  "versoes": {
+    "torch": "2.14.1+cu132",
+    "transformers": "4.57.6",
+    "cuda": "13.2",
+    "pillow": "12.3.0",
+    "driver": "595.71.05",
+    "gpu": "Tesla T4",
+    "cudnn": 92400,
+    "numpy": "2.5.4",
+    "opencv": "4.14.0",
+    "openslide": "4.0.1",
+    "cpus": 4
+  },
+  "lote_usado": 32,
+  "fim_utc": "2026-11-06T13:43:15+00:00"
+}
