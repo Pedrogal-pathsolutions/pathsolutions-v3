@@ -1,6 +1,6 @@
 # Fase 4 — Worker GPU e acervo `.h5`
 
-Relatório parcial, no fim da sessão 2. A fase começou em 30/10/2026 (~16:15 UTC), depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão 1 terminou em 31/10, às 00:46 UTC; a sessão 2 foi em 03/11, das 12:51 às ~14:00 UTC. A próxima começa depois do apply do `fase4-kv-worker.tfplan` (seção "Próxima sessão"). O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e a lâmina em branco. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/` (sessão 2: `2026-11-03-fase4-sessao2.md`).
+Relatório parcial, no fim da sessão 4. A fase começou em 30/10/2026 (~16:15 UTC), depois do APROVADO FASE 3, e segue as fatias da seção 19.2 do plano (`docs/v3/02-plano-v3.md`). A sessão 1 terminou em 31/10, às 00:46 UTC; a sessão 2 foi em 03/11, das 12:51 às ~14:00 UTC; a sessão 3, em 06/11, das 12:11 às 17:50 UTC, quando caiu por falta de luz, esperando as respostas da fatia 11; a sessão 4 retomou no mesmo dia, às 19:05 UTC. O gate jurídico não fechou e a exportação do Motic não chegou: o aceite usa as lâminas públicas de reserva da seção 17 e, no lugar da lâmina em branco, uma sintética. O detalhe de cada ação nas VMs e no Azure fica em `docs/operacao/` (sessões 3 e 4: `2026-11-06-fase4-sessao3.md` e `2026-11-06-fase4-sessao4.md`).
 
 ## Situação por fatia
 
@@ -10,14 +10,14 @@ Relatório parcial, no fim da sessão 2. A fase começou em 30/10/2026 (~16:15 U
 | 1. Benchmark na VM2 | feita (30/10, 17:42–18:57 UTC): 4 lâminas TCGA-STAD, fp16 e fp32, CPU, tempo por lâmina e partida (a frio, na fatia 9). O benchmark achou um defeito na escolha do nível da miniatura, corrigido em `42fdfe3`. Resultado abaixo e em `docs/v3/04-benchmark-vm2.json` |
 | 2. Pesos do Hibou-L | feita: o Pedro baixou a revisão fixada pelo terminal dele (30/10, 17:21 UTC), com o script de `ed28b16`; hashes e licença conferidos; código lido antes de rodar; atenção fixada em eager. Cópia na VM2 com o benchmark, com sha256 conferido lá. No container `modelos` desde 03/11 (8 blobs, tamanho e MD5 conferidos) |
 | 3. Esquema mínimo com RLS forçada | feita (`9a19fee`, aplicada às 19:34 UTC com autorização): base `pathsol` vazia, com `tenants`, `slides` e `jobs`, estados e motivos da decisão 5; 16 testes num PostgreSQL 18.6 temporário |
-| 4. Produtor de jobs de teste | código e migração 0002 (`f20c6c6`), aplicados às 19:44 UTC com autorização, com o tenant `publico`. A CMU-1.svs está registrada (03/11). Nenhuma mensagem enviada ainda: o primeiro job vai com o worker pronto na VM2 |
-| 5. Consumidor idempotente | núcleo (`912dfd7`) e laço do worker (`05df91d`), com testes de unidade e de banco. A senha está no cofre e o `pathsol_worker` tem LOGIN (03/11). A conexão de verdade espera o papel da VM2 no segredo (`fase4-kv-worker.tfplan`) |
+| 4. Produtor de jobs de teste | código e migração 0002 (`f20c6c6`), aplicados às 19:44 UTC com autorização, com o tenant `publico`. A CMU-1.svs está registrada (03/11). Primeiro job em 06/11 (sessão 3). Na fatia 11, os comandos `reenviar` (teste 2) e `forjar` (mensagem forjada) |
+| 5. Consumidor idempotente | núcleo (`912dfd7`) e laço do worker (`05df91d`), com testes de unidade e de banco. Desde 06/11, o worker na VM2 lê a senha no cofre e conecta ao banco por TLS 1.3. Reconecta, e banco indisponível não conta tentativa (`bfbd7d4`) |
 | 6. QC 1, tiling, QC 2 e foco | código e testes com lâminas sintéticas (`5de21d8`); limiares provisórios, calibrados no aceite |
-| 7. Extração e `.h5` pelo `job_id` | código e testes (`22843e1`); um job inteiro com os pesos reais rodou na CPU da VM1. A validação fp16 × fp32 com o código final fica para o primeiro `.h5` na VM2 |
-| 8. Retry, dead-letter e alarme | no consumidor (`912dfd7`), com testes de unidade; com a fila real, depois do apply. O alarme da dead-letter é o da Fase 3 |
-| 9. Liga e desliga | código e testes das três camadas e da partida (sessão 2): autodesalocação, pulso e regra do horário no worker (`0bf1dd8`); heartbeat no banco, com a migração 0003 aplicada (`dbf00ff`); reconciliador na VM1 (`961d80f`, `82dcaab`) e watchdog na VM2 (`28250d9`), com as units. Nada instalado nas VMs; faltam a unit do worker, o teto de partidas e a prova com as VMs reais |
+| 7. Extração e `.h5` pelo `job_id` | código e testes (`22843e1`). Validação fp16 × fp32 na T4 com o código final, antes do primeiro `.h5` (06/11, CMU-1): cosseno médio 0,9999985 e mínimo 0,9999753 em 256 patches, sem NaN nem Inf (`docs/v3/04-validacao-fp16-vm2.json`). Primeiro `.h5` do acervo no mesmo dia |
+| 8. Retry, dead-letter e alarme | no consumidor (`912dfd7`), com testes de unidade; fila real em uso desde 06/11. O alarme da dead-letter é o da Fase 3. O teste 4 é da fatia 11 |
+| 9. Liga e desliga | código e testes das três camadas e da partida (sessão 2); limite de 3 partidas sem job terminado (`d2ac508`) e unit do worker (`a771bcd`, corrigida em `b56737c` e `1eedf3e`). Instalados em 06/11: reconciliador na VM1, watchdog e worker na VM2. Ciclo real conferido (partida a frio: 2 min 28 s do pedido de start ao modelo pronto) e uma desalocação real pelo reconciliador (17:03:34). Os alertas das linhas novas esperam o apply do `fase4-alertas.tfplan`; a prova completa é da fatia 11 |
 | 10. Desidentificação | script do operador (`313d1a3`, `b1cafdb`), testado em SVS sintéticas e na CMU-1.svs (`301cd9c`). Em 03/11, a CMU-1.svs foi desidentificada e enviada ao `wsi-publico` com a SAS de delegação só de criação, que funcionou contra o serviço. A exportação do Motic não chegou |
-| 11. Lâminas de aceite e testes | não começada |
+| 11. Lâminas de aceite e testes | lote 1 em 06/11 (sessão 4; `docs/operacao/2026-11-06-fase4-sessao4.md`): TCGA-STAD, TCGA-COAD em JPEG 2000, TCGA-CESC e a lâmina sintética no `wsi-publico`. Passaram o teste 2 ("já terminado"), o teste 3 de isolamento (0 linhas sem tenant e com tenant inexistente) e o teste 5 (QC_FAILED `empty_glass`). Pior tempo: CESC, 21 min 33 s. Liga pelo reconciliador e desliga pelo watchdog, com a ARM real. Faltam os testes 1 e 6 (ferramenta pronta, `4a91a5e`), 3, 4, 8 e 9, a mensagem forjada e a camada 1 do liga e desliga |
 
 As fatias 6 a 10 avançaram no código antes de a 4 e a 5 rodarem com a fila e o banco reais, porque isso depende do apply. Cada uma terminou com testes passando, commit e push.
 
@@ -30,8 +30,25 @@ As fatias 6 a 10 avançaram no código antes de a 4 e a 5 rodarem com a fila e o
 
 ## Decisões do Pedro (06/11)
 
+Na abertura da sessão 3, sobre os riscos do relatório da sessão 2:
+- **Laço de partida:** no lugar do teto por dia, o reconciliador para de ligar a VM2 depois de 3 partidas seguidas sem nenhum job chegar a um estado terminal, e grava FALHA no syslog. Uma partida que termina algum job zera a contagem (`d2ac508`, com o fim de job no heartbeat, migração 0004, `ee5c249`).
+- **Conexão do worker com o banco:** o worker reconecta, e banco indisponível não conta como tentativa do job; uma queda do banco não manda jobs para a dead-letter (`bfbd7d4`, com teste).
+- **Linhas novas sem alerta:** o filtro da regra do banco passa a pegar os FALHA do reconciliador e do watchdog, e entra a regra da idade do job, num plano só (`c3dacfb`, `fase4-alertas.tfplan`; apply pendente).
+
+Na sessão 4:
 - **Citologia no aceite da Fase 4:** o PNG da grade do teste 6 sai sem citologia, com a TCGA-STAD (estômago), a TCGA-COAD em JPEG 2000 (a difícil) e a CMU-1. A Hamamatsu-1.ndpi da reserva da seção 17 não é baixada: o leitor do worker só abre SVS da Aperio (`services/worker/src/pathsol_worker/slide.py`:58-59; decisão 5), e o script de desidentificação também a recusaria.
 - **Item da Fase 8:** a citologia é testada com a primeira lâmina de citologia de laboratório, depois do gate jurídico (decisão 6) e antes do go-live.
+- **Teste 5:** a lâmina em branco do laboratório ainda não chegou. O teste roda numa SVS sintética de vidro sem tecido, enviada ao `wsi-publico` pelo caminho das outras, como biópsia em HE sem órgão; a lâmina real repete o teste quando chegar.
+
+## Sessão 3 (06/11): ações
+
+Detalhe em `docs/operacao/2026-11-06-fase4-sessao3.md`. Cada bloco teve autorização numa pergunta só.
+- **Apply do `fase4-kv-worker.tfplan` conferido:** a atribuição da VM2 só no segredo `banco-worker` e um disparo do `pathsol-role-assignment-v3`, como o plano previa; `terraform plan` sem mudanças.
+- **Plano `fase4-alertas.tfplan`:** 1 a criar e 1 a alterar (sha256 `f23de8d6ba82840dedcb1555a99d0ee67130e35c563bbd21cc7529feed29a4dc`). Não aplicado.
+- **VM1:** imagens `pathsol-api:ee5c249` e `pathsol-worker:bfbd7d4`, cada uma do commit exato; migração 0004; reconciliador instalado.
+- **VM2:** watchdog, unit do worker e imagem `bfbd7d4`, e as duas imagens antigas removidas. No ciclo real (desalocar e ligar), a unit sobe sozinha e o modelo fica pronto 2 min 28 s depois do pedido de start. Dois defeitos da unit, achados ali, foram corrigidos com autorização (`b56737c`, `1eedf3e`).
+- **Primeiro job:** CMU-1 COMPLETED 4 min 33 s depois de o job ser criado, dos quais ~2 min 40 s esperando o start manual do worker; `.h5` de 24.468.812 bytes, conferido por HEAD e GET com a identidade da VM2.
+- **Depois da queda:** a sessão caiu às 17:50 com os marcadores ainda nos dois hosts; o `sudo rm` deles, autorizado para o fim da depuração, não chegou a rodar. Às 17:03:32 o marcador da VM1 venceu, e o reconciliador desalocou a VM2 no mesmo passe (HTTP 202: "nenhum job visível, running desde 2026-11-06T13:24:25Z e heartbeat de 8543 s"), a primeira desalocação real da camada 3. Daí até a sessão 4, o marcador vencido deu uma FALHA por passe (247 até 19:06), sem alerta, porque o `fase4-alertas` não foi aplicado.
 
 ## Sessão 2 (03/11): conferências e ações
 
@@ -224,19 +241,27 @@ Nenhum papel novo tira a retenção legal: o papel sem exclusão não tem `conta
 - **Peças grandes custam mais que o previsto:** uma peça do TCGA levou 5,4 min de extração, contra ~3 min no pior caso do plano. A 6.000 lâminas/mês só de peças, a VM2 passaria das ~430 h do gatilho de reserva (padrão 7).
 - **Dados públicos lentos na fonte:** ~3,3 MB/s por conexão no GDC, a partir da VM2.
 - **Marcador de manutenção em dois hosts:** o operador escreve o da VM2 e o da VM1. Sem o da VM1, o reconciliador desaloca a VM2 numa manutenção com o worker parado e a fila vazia, depois do visibility timeout; sem o da VM2, o worker rodado à mão desaloca a VM2 depois de 10 min sem job, e o watchdog, depois de 15 min sem pulso.
-- **Laço de partida com o worker quebrado:** se o worker morre na partida (sem senha, sem GPU, imagem errada) com um job visível, o watchdog desaloca a VM2 com ~5 min de uptime (GPU) ou ~15 min (sem pulso), e o reconciliador religa no passe seguinte, porque o job continua visível e nunca chega ao contador de tentativas. Cada volta custa de ~R$ 0,50 a ~R$ 1,60 (6 a 20 min de VM2 a R$ 4,67/h), até o desligamento da VM1. As camadas e o alerta de 4 h não pegam isso. A decidir na próxima sessão, antes de instalar o reconciliador: um teto de partidas por dia no reconciliador, com FALHA no syslog, é a saída mais simples.
-- **Linhas novas sem alerta:** o único alerta de syslog filtra a VM1 e o `pathsol-banco` (`banco.tf`:51-52). Os `FALHA` do reconciliador e do watchdog, as desalocações do watchdog e a idade do job mais antigo (seção 9.4) ainda não avisam ninguém. Vai num plano do Terraform antes da prova do liga e desliga: a regra da idade do job já está no custo do plano (R$ 2,61/mês); os `FALHA` podem entrar alargando o filtro da regra do banco, sem custo novo.
-- **Conexão do worker com o banco não se refaz:** a do `JobStore` (fatia 5) não reconecta. Uma queda do banco faz cada job falhar até o worker reiniciar; o heartbeat no banco só vira aviso no log. Com a VM2 ligada depois das 23:00, o auto-shutdown das 23:30 é a rede de segurança.
+- **Laço de partida com o worker quebrado:** com o limite decidido em 06/11, o reconciliador para depois de 3 partidas seguidas sem job terminado (de ~R$ 1,40 a ~R$ 4,70 de VM2 por laço) e grava FALHA no syslog. Esse FALHA só avisa alguém depois do apply do `fase4-alertas.tfplan`.
+- **Linhas novas sem alerta:** até o apply do `fase4-alertas.tfplan`, os FALHA do reconciliador e do watchdog e a idade do job mais antigo não avisam ninguém. Em 06/11, isso deixou sem aviso 247 FALHA de um marcador vencido (sessão 3, acima).
+- **Mensagem na dead-letter não expira:** o worker grava com TTL −1 (`services/worker/src/pathsol_worker/fila.py`:4-5 e 74), e na fila de dead-letter a VM2 só tem `Storage Queue Data Message Sender` (`infra/terraform/main/papeis.tf`:196-200). Nenhuma identidade da v3 lê nem apaga mensagem lá; o login do Pedro não conferi. O teste 4 e o da mensagem forjada deixam o alarme ligado até alguém tirar a mensagem. O procedimento vem com o lote desses testes.
 
 ## Decisões pedidas ao Pedro
 
-- Aplicar o `fase4-kv-worker.tfplan` (sha256 `0eb97542…39a4`) pelo SSH, com o Antigravity fechado, e fazer `az logout` no fim. O `fase4-modelos.tfplan` foi aplicado em 31/10 e conferido na sessão 2.
+- Aplicar o `fase4-alertas.tfplan` (sha256 `f23de8d6ba82840dedcb1555a99d0ee67130e35c563bbd21cc7529feed29a4dc`) pelo SSH, com o Antigravity fechado, e fazer `az logout` no fim. O `fase4-kv-worker.tfplan` foi aplicado e conferido na sessão 3.
+- Visibility timeout: o pior tempo medido é o da CESC, 21 min 33 s (1.293 s), do RUNNING ao COMPLETED. O dobro, 2.586 s, passa do piso de 30 min. Pela regra do plano, `PATHSOL_VISIBILIDADE` vai de 1.800 para 2.600 s e `PATHSOL_PIOR_JOB` de 900 para 1.300 s, nas units das duas VMs. A troca pede autorização na próxima sessão.
 
 ## Próxima sessão
 
-Os passos 1 a 5 e 7 da lista da sessão 1 foram feitos na sessão 2; o 6 começou. Em ordem, cada passo com a autorização que ele pede:
-1. Conferir o apply do `fase4-kv-worker.tfplan`: a atribuição da VM2 no segredo e um disparo do `pathsol-role-assignment-v3`.
-2. Fatia 9, o que falta: o teto de partidas por dia no reconciliador (risco "laço de partida"); a unit do worker na VM2; o plano do Terraform com os alertas das linhas novas (risco "linhas novas sem alerta"); a instalação das units do watchdog (VM2) e do reconciliador (VM1); os marcadores de manutenção nos dois hosts durante a depuração.
-3. Imagem nova do worker na VM2 (`docker save | docker load`, em manutenção) e remoção das duas antigas de lá (`a4b2d28`, `42fdfe3`).
-4. Primeiro job de verdade: `pathsol_produtor.py job` da CMU-1.svs, worker na VM2, `.h5` no `slide-h5` e COMPLETED. Antes desse `.h5`, a validação fp16 × fp32 com o código final (fatia 7).
-5. Fatia 11: as outras lâminas públicas da seção 17, com a licença conferida de novo antes de cada download, e a lâmina em branco; testes 1 a 5, 8 e 9, PNG do teste 6, visibility timeout, teste 3 de isolamento, mensagem forjada e prova do liga e desliga.
+Os passos da sessão 2 foram feitos nas sessões 3 e 4. Em ordem, cada passo com a autorização que ele pede:
+1. Conferir o apply do `fase4-alertas.tfplan`, se o Pedro aplicar: a regra do banco com os FALHA do reconciliador e do watchdog, e a regra da idade do job.
+2. Fatia 11, lote 2:
+   - ferramentas na VM2: `comparar` das duas `.h5` da STAD (jobs `9ec89dc0…` e `9548a090…`, teste 1) e `grade` da STAD, da COAD e da CMU-1 (PNG do teste 6);
+   - visibility timeout e pior job nas units;
+   - teste 3 (falha no meio, com a CESC; a mensagem só volta depois do visibility timeout);
+   - teste 4 (falha injetada) e mensagem forjada (`forjar`, `cee00bd`), com o procedimento para tirar a mensagem da dead-letter (risco acima);
+   - teste 9 (`foco.py`, `c8d2128`: revisão completa antes de rodar; imagem de teste na VM2);
+   - camada 1 do liga e desliga (o worker desaloca depois de 10 min sem job);
+   - teste 8 no fim;
+   - resultados em `docs/v3/aceite-worker.md`.
+3. Remover os worktrees e ramos dos agentes das sessões 3 e 4, já trazidos para a `main` (`.claude/worktrees/wf_a9ff55c7-84c-*`, `wf_205f8755-139-*` e `wf_182cc94d-02a-1`).
+4. Marcadores: no fim de cada manutenção, `sudo rm` nos dois hosts antes do prazo. Nesta sessão, o da VM1 venceu às 22:30 antes do `rm` (às 22:41), e o reconciliador deu FALHA a cada passe nesse intervalo.
