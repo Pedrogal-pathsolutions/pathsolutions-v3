@@ -28,6 +28,11 @@ As fatias 6 a 10 avançaram no código antes de a 4 e a 5 rodarem com a fila e o
 - **Owner herdado da subscrição:** as 2 atribuições do grupo da Quatto são do parceiro CSP, que dá suporte ao orçamento. Risco aceito, nada muda. A regra do `CLAUDE.md` sobre papéis na conta de WSI vale para as identidades da v3 (pergunta deixada pela Fase 3).
 - **Fatia 1:** pesos antes do benchmark, download pelo terminal do Pedro, imagem do worker, as quatro lâminas TCGA-STAD só no disco temporário da VM2 e um plano do Terraform com o container dos pesos e os papéis da VM1.
 
+## Decisões do Pedro (06/11)
+
+- **Citologia no aceite da Fase 4:** o PNG da grade do teste 6 sai sem citologia, com a TCGA-STAD (estômago), a TCGA-COAD em JPEG 2000 (a difícil) e a CMU-1. A Hamamatsu-1.ndpi da reserva da seção 17 não é baixada: o leitor do worker só abre SVS da Aperio (`services/worker/src/pathsol_worker/slide.py`:58-59; decisão 5), e o script de desidentificação também a recusaria.
+- **Item da Fase 8:** a citologia é testada com a primeira lâmina de citologia de laboratório, depois do gate jurídico (decisão 6) e antes do go-live.
+
 ## Sessão 2 (03/11): conferências e ações
 
 **Apply do `fase4-modelos.tfplan`**, feito pelo Pedro pelo SSH em 31/10, às 00:49 UTC: sha256 igual ao do relatório; `terraform plan` sem mudanças; `modelos` privado e sem retenção legal; as 5 atribuições da VM1 com os papéis e escopos do plano. O `pathsol-role-assignment-v3` disparou 5 vezes às 00:54 UTC, uma por papel; o `pathsol-storage-write-v3` não disparou.
