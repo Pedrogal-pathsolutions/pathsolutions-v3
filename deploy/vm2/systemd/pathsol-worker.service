@@ -1,0 +1,40 @@
+# Plan 8.3 and 9.1: the GPU worker, from boot. It takes jobs until the queue
+# stays idle for 10 min, asks ARM to deallocate VM2 (layer 1) and exits. No
+# restart: a worker that dies must go silent, so that the watchdog deallocates
+# VM2 15 min later; a restart loop would keep the pulse fresh and VM2 on.
+[Unit]
+Description=PathSolutions v3 worker GPU
+Requires=docker.service
+Wants=network-online.target
+After=docker.service network-online.target
+RequiresMountsFor=/data /mnt
+
+[Service]
+# The temporary disk comes back empty at every start; the image runs as 5433.
+ExecStartPre=/usr/bin/install -d -o 5433 -g 5433 -m 0700 /mnt/pathsol-trabalho
+ExecStartPre=/usr/bin/install -d -o 5433 -g 5433 -m 0755 /var/lib/pathsol
+# --init: as PID 1, Python would ignore the SIGTERM of docker stop. The logs go
+# to the host journal, capped by journald, and outlive the container.
+# /etc/pathsol holds the maintenance marker and the database certificate,
+# pinned by verify-full (plan 7).
+ExecStart=/usr/bin/docker run --rm --pull never --init --name pathsol-worker --gpus all \
+    --log-driver journald --log-opt tag=pathsol-worker \
+    -v /data/modelos/hibou-L/31a3b9fee16554c8552cb643d311733bce8faf7c:/modelo:ro \
+    -v /mnt/pathsol-trabalho:/trabalho \
+    -v /var/lib/pathsol:/var/lib/pathsol \
+    -v /etc/pathsol:/etc/pathsol:ro \
+    -e PATHSOL_MODELO=/modelo \
+    -e PATHSOL_TRABALHO=/trabalho \
+    -e "PATHSOL_BANCO=host=10.0.0.5 dbname=pathsol user=pathsol_worker sslmode=verify-full sslrootcert=/etc/pathsol/banco.crt" \
+    -e PATHSOL_VISIBILIDADE=1800 \
+    -e PATHSOL_OCIOSO=600 \
+    -e PATHSOL_PIOR_JOB=900 \
+    -e PATHSOL_DESLIGA_VM1=02:00 \
+    -e PATHSOL_PULSO=/var/lib/pathsol/pulso \
+    -e PATHSOL_MANUTENCAO=/etc/pathsol/manutencao \
+    pathsol-worker:bfbd7d4 pathsol_worker
+ExecStop=/usr/bin/docker stop --timeout 30 pathsol-worker
+Restart=no
+
+[Install]
+WantedBy=multi-user.target

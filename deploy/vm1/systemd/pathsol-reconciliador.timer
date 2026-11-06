@@ -1,9 +1,11 @@
-# Plan 8.3: the queue every 30 s, from a minute after boot.
+# Plan 8.3: the queue every 30 s, from two minutes after boot. A start reads
+# the database first, and Postgres took 32 to 46 s from the kernel to accept
+# connections in the boots of 03 to 06/11; a pass before that logs FALHA.
 [Unit]
 Description=PathSolutions v3 reconciliador da VM2
 
 [Timer]
-OnBootSec=1min
+OnBootSec=2min
 OnUnitActiveSec=30s
 AccuracySec=1s
 
