@@ -6,6 +6,7 @@ operator, with no network port, and leaves the code in Phase 5.
     pathsol_produtor.py lamina --tenant SLUG --arquivo UUID.svs --sha256 HEX --material M --coloracao C [--orgao O]
     pathsol_produtor.py job --tenant SLUG --lamina UUID [--versao-pipeline V]
     pathsol_produtor.py reenviar --tenant SLUG --job UUID
+    pathsol_produtor.py forjar --tenant SLUG --job UUID
 
 The tenant comes from the operator: the one approved exception to "tenant
 only from the JWT". Slide and job are written as pathsol_produtor, under RLS,
@@ -13,9 +14,12 @@ by psql inside the database container. The message is built from the
 database's values and goes to the queue with VM1's identity only after the
 commit, so the worker never gets a job that is not in the database.
 
-reenviar writes nothing: it reads a job of the tenant and sends its message
-again, as "job" built it. It is test 2 of the worker's acceptance
-(idempotency): the worker only deletes the duplicate of a finished job.
+reenviar and forjar write nothing: they read a job of the tenant and send its
+message again, as "job" built it. reenviar is test 2 of the worker's
+acceptance (idempotency): the worker only deletes the duplicate of a finished
+job. forjar sends it with tenant_id swapped for a random UUID that is no
+tenant, for the forged-message test (decision 7): the worker sends it to the
+dead-letter queue without processing it, and the job stays as it was.
 """
 import argparse
 import email.utils
@@ -150,6 +154,13 @@ def resend(slug, job_id):
                    f"no envio da mensagem do job {job_id}")
 
 
+def forge(slug, job_id):
+    tenant = str(uuid.uuid4())
+    return deliver({**stored(slug, job_id), "tenant_id": tenant},
+                   f"mensagem forjada do job {job_id} na fila, com o tenant_id {tenant}, que não é de nenhum tenant; "
+                   "nada gravado no banco", f"no envio da mensagem forjada do job {job_id}")
+
+
 def parser():
     slug = checked(r"[a-z0-9]{2,20}", "tenant")
     parser = argparse.ArgumentParser(description="Produtor de jobs de teste da Fase 4 (decisão 7).")
@@ -170,6 +181,10 @@ def parser():
     again = commands.add_parser("reenviar", help="manda de novo à fila a mensagem de um job do tenant, sem gravar nada (teste 2)")
     again.add_argument("--tenant", required=True, type=slug)
     again.add_argument("--job", required=True, type=checked(UUID, "job"))
+    forged = commands.add_parser("forjar", help="manda à fila a mensagem de um job do tenant com um tenant_id de nenhum tenant, "
+                                                "sem gravar nada (mensagem forjada)")
+    forged.add_argument("--tenant", required=True, type=slug)
+    forged.add_argument("--job", required=True, type=checked(UUID, "job"))
     return parser
 
 
@@ -187,7 +202,9 @@ def main(argv=None):
             return 0
         if args.comando == "job":
             return job(args.tenant, args.lamina, args.versao_pipeline)
-        return resend(args.tenant, args.job)
+        if args.comando == "reenviar":
+            return resend(args.tenant, args.job)
+        return forge(args.tenant, args.job)
     except subprocess.CalledProcessError as error:
         print(f"FALHA no banco: {error.stderr.strip()}", file=sys.stderr)
         return 1

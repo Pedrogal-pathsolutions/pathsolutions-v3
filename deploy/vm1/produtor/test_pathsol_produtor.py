@@ -95,20 +95,45 @@ class Job(unittest.TestCase):
         self.assertNotIn(TOKEN, err)
 
 
-class Resend(unittest.TestCase):
-    def test_reads_the_job_in_the_database_first_and_writes_nothing(self):
-        calls = Calls(psql_out=STORED)
-        code, out, _ = run_main(calls, "reenviar", "--tenant", "publico", "--job", JOB)
-        self.assertEqual(code, 0)
-        self.assertEqual([kind for kind, *_ in calls.log], ["psql", "imds", "fila"])
-        _, args, sql = calls.log[0]
-        self.assertEqual(args[:6], ["docker", "exec", "-i", "-u", "postgres", "pathsol-banco"])
-        self.assertIn(f"job={JOB}", args)
-        self.assertIn("SET LOCAL ROLE pathsol_produtor", sql)
-        self.assertNotRegex(sql, r"INSERT|UPDATE|DELETE")
-        self.assertIn(JOB, out)
-        self.assertNotIn(TOKEN, out)
+class ExistingJob(unittest.TestCase):
+    """reenviar and forjar: both read a job of the tenant and send its message."""
 
+    def test_reads_the_job_in_the_database_first_and_writes_nothing(self):
+        for command in ("reenviar", "forjar"):
+            calls = Calls(psql_out=STORED)
+            with self.subTest(command=command):
+                code, out, _ = run_main(calls, command, "--tenant", "publico", "--job", JOB)
+                self.assertEqual(code, 0)
+                self.assertEqual([kind for kind, *_ in calls.log], ["psql", "imds", "fila"])
+                _, args, sql = calls.log[0]
+                self.assertEqual(args[:6], ["docker", "exec", "-i", "-u", "postgres", "pathsol-banco"])
+                self.assertIn(f"job={JOB}", args)
+                self.assertIn("SET LOCAL ROLE pathsol_produtor", sql)
+                self.assertNotRegex(sql, r"INSERT|UPDATE|DELETE")
+                self.assertIn(JOB, out)
+                self.assertNotIn(TOKEN, out)
+
+    def test_failed_send_names_the_job_and_fails(self):
+        for command in ("reenviar", "forjar"):
+            calls = Calls(psql_out=STORED, fail_send=True)
+            with self.subTest(command=command):
+                code, _, err = run_main(calls, command, "--tenant", "publico", "--job", JOB)
+                self.assertEqual(code, 1)
+                self.assertIn("FALHA", err)
+                self.assertIn(JOB, err)
+                self.assertNotIn(TOKEN, err)
+
+    def test_refuses_a_job_that_is_not_a_uuid_before_any_call(self):
+        for command in ("reenviar", "forjar"):
+            for value in ("caso-12345", JOB.upper(), ""):
+                calls = Calls(psql_out=STORED)
+                with self.subTest(command=command, value=value):
+                    code, _, _ = run_main(calls, command, "--tenant", "publico", "--job", value)
+                    self.assertNotEqual(code, 0)
+                    self.assertEqual(calls.log, [])
+
+
+class Resend(unittest.TestCase):
     def test_sends_the_text_that_job_sent(self):
         first = Calls(psql_out=f"{TENANT}|{SLIDE}.svs|estomago|biopsia\n")
         self.assertEqual(run_main(first, "job", "--tenant", "publico", "--lamina", SLIDE)[0], 0)
@@ -117,21 +142,24 @@ class Resend(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(sent_text(again), sent_text(first))
 
-    def test_failed_send_names_the_job_and_fails(self):
-        calls = Calls(psql_out=STORED, fail_send=True)
-        code, _, err = run_main(calls, "reenviar", "--tenant", "publico", "--job", JOB)
-        self.assertEqual(code, 1)
-        self.assertIn("FALHA", err)
-        self.assertIn(JOB, err)
-        self.assertNotIn(TOKEN, err)
 
-    def test_refuses_a_job_that_is_not_a_uuid_before_any_call(self):
-        for value in ("caso-12345", JOB.upper(), ""):
+class Forge(unittest.TestCase):
+    def test_changes_only_the_tenant_to_a_fresh_uuid_that_it_prints(self):
+        expected = {"job_id": JOB, "slide_id": SLIDE, "blob": f"wsi-publico/{SLIDE}.svs", "organ": "estomago",
+                    "material": "biopsia", "pipeline_version": "fase4-teste", "attempt": 0}
+        tenants = []
+        for _ in range(2):
             calls = Calls(psql_out=STORED)
-            with self.subTest(value=value):
-                code, _, _ = run_main(calls, "reenviar", "--tenant", "publico", "--job", value)
-                self.assertNotEqual(code, 0)
-                self.assertEqual(calls.log, [])
+            code, out, _ = run_main(calls, "forjar", "--tenant", "publico", "--job", JOB)
+            self.assertEqual(code, 0)
+            message = json.loads(sent_text(calls))
+            tenant = message.pop("tenant_id")
+            self.assertNotEqual(tenant, TENANT)
+            self.assertEqual(message, expected)
+            self.assertEqual(str(uuid.UUID(tenant)), tenant)
+            self.assertIn(tenant, out)
+            tenants.append(tenant)
+        self.assertNotEqual(tenants[0], tenants[1])
 
 
 class Slide(unittest.TestCase):

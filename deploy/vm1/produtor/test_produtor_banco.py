@@ -70,13 +70,24 @@ class ProducerSql(unittest.TestCase):
         self.assertEqual(json.dumps(again), json.dumps(first))
         self.assertEqual(self.rows(), before)
 
+    def test_forge_changes_only_the_tenant_to_none_of_the_tenants_and_writes_nothing(self):
+        self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
+        _, (first,) = self.sent("job", "--tenant", "publico", "--lamina", self.slide("publico"))
+        before = self.rows()
+        code, (forged,) = self.sent("forjar", "--tenant", "publico", "--job", first["job_id"])
+        self.assertEqual(code, 0)
+        self.assertEqual({**forged, "tenant_id": first["tenant_id"]}, first)
+        self.assertNotIn(uuid.UUID(forged["tenant_id"]), [tenant for tenant, *_ in before[0]])
+        self.assertEqual(self.rows(), before)
+
     def test_job_of_another_tenant_or_unknown_sends_nothing(self):
         self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
         self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="diagnose")
         _, (other,) = self.sent("job", "--tenant", "diagnose", "--lamina", self.slide("diagnose"))
-        for job in (other["job_id"], str(uuid.uuid4())):
-            with self.subTest(job=job):
-                self.assertEqual(self.sent("reenviar", "--tenant", "publico", "--job", job), (1, []))
+        for command in ("reenviar", "forjar"):
+            for job in (other["job_id"], str(uuid.uuid4())):
+                with self.subTest(command=command, job=job):
+                    self.assertEqual(self.sent(command, "--tenant", "publico", "--job", job), (1, []))
 
     def test_tenant_is_created_once(self):
         first = self.psql(produtor.TENANT_SQL, id=uuid.uuid4(), slug="publico")
